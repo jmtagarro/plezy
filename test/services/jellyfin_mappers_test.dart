@@ -153,6 +153,67 @@ void main() {
       expect(item.title, 'Holidays');
     });
 
+    group('photo size', () {
+      MediaItem map(Map<String, dynamic> item, {MediaBrowserDialect dialect = MediaBrowserDialect.jellyfin}) =>
+          JellyfinMappers.mediaItem(item, serverId: ServerId(_serverId), absolutizer: null, dialect: dialect)!;
+
+      for (final dialect in MediaBrowserDialect.values) {
+        test('comes from the item when there is no media source (${dialect.name})', () {
+          final item = map({'Id': 'photo-1', 'Type': 'Photo', 'Width': 6024, 'Height': 4024}, dialect: dialect);
+
+          expect(item.mediaVersions?.single.width, 6024);
+          expect(item.mediaVersions?.single.height, 4024);
+        });
+      }
+
+      test('fills in a media source that has no size, keeping its file', () {
+        final item = map({
+          'Id': 'photo-1',
+          'Type': 'Photo',
+          'Width': 6024,
+          'Height': 4024,
+          'MediaSources': [
+            {'Id': 'source-1', 'Container': 'jpg', 'Path': '/photos/a.jpg'},
+          ],
+        });
+
+        final version = item.mediaVersions!.single;
+        expect(version.id, 'source-1');
+        expect((version.width, version.height), (6024, 4024));
+        expect(version.container, 'jpg');
+        expect(version.parts.single.file, '/photos/a.jpg');
+      });
+
+      test('keeps the size a media source exposes through its image stream', () {
+        final item = map({
+          'Id': 'photo-1',
+          'Type': 'Photo',
+          'Width': 100,
+          'Height': 100,
+          'MediaSources': [
+            {
+              'Id': 'source-1',
+              'Width': 6024,
+              'Height': 4024,
+              'MediaStreams': [
+                {'Type': 'Video', 'Index': 0, 'Codec': 'jpeg', 'Width': 6024, 'Height': 4024},
+              ],
+            },
+          ],
+        });
+
+        expect((item.mediaVersions!.single.width, item.mediaVersions!.single.height), (6024, 4024));
+      });
+
+      test('stays unknown when the item has no size either', () {
+        expect(map({'Id': 'photo-1', 'Type': 'Photo'}).mediaVersions, isNull);
+      });
+
+      test('is not taken from the item for other kinds', () {
+        expect(map({'Id': 'movie-1', 'Type': 'Movie', 'Width': 1920, 'Height': 1080}).mediaVersions, isNull);
+      });
+    });
+
     test('reports no ratings when the server sent neither score', () {
       final item = JellyfinMappers.mediaItem(
         {'Id': 'movie-bare', 'Type': 'Movie'},

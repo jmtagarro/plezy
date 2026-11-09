@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:cached_network_image_ce/cached_network_image.dart';
 import 'package:drift/native.dart';
@@ -7,6 +9,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:plezy/database/app_database.dart';
 import 'package:plezy/focus/input_mode_tracker.dart';
@@ -19,8 +22,11 @@ import 'package:plezy/media/media_part.dart';
 import 'package:plezy/media/media_server_client.dart';
 import 'package:plezy/media/media_version.dart';
 import 'package:plezy/media/server_capabilities.dart';
+import 'package:plezy/media/media_browser_dialect.dart';
 import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/screens/photo_viewer_screen.dart';
+import 'package:plezy/services/device_performance.dart';
+import 'package:plezy/services/jellyfin_mappers.dart';
 import 'package:plezy/services/plex_api_cache.dart';
 import 'package:plezy/services/plex_mappers.dart';
 import 'package:plezy/theme/mono_theme.dart';
@@ -35,6 +41,11 @@ import '../test_helpers/multi_server_fixtures.dart';
 
 const _partPath = '/library/parts/1/2/photo.jpg';
 const _thumbPath = '/library/metadata/1/thumb/2';
+
+/// A 1x1 PNG, so the zoom upgrade has something real to decode.
+final _pngBytes = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+);
 
 void main() {
   // The artwork cache keeps its files here. Downloads in widget tests reach
@@ -551,9 +562,524 @@ void main() {
       expect(client.requests.map((request) => request.width), everyElement(1920));
     });
   });
+
+  group('zoom upgrade', () {
+    setUp(() {
+      // Holds the screen-sized image in its loading state: tests here assert on
+      // the widget it stays in, and no artwork can load without a cache folder.
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (_) => Completer<Object?>().future,
+      );
+    });
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
+    });
+
+    /// Opens at a screen edge of 1000 pixels.
+    Future<_FakeTransport> open(
+      WidgetTester tester,
+      MediaItem photo, {
+      MediaServerClient? client,
+      Future<ui.Image> Function(ui.ImmutableBuffer buffer, int edge)? decoder,
+    }) async {
+      tester.view.physicalSize = const Size(1000, 500);
+      tester.view.display.size = const Size(1000, 500);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.view.display.reset);
+      final transport = _FakeTransport();
+      final multi = testMultiServer(clients: [client ?? _RecordingClient(answersWithUrls: true)]);
+      await tester.pumpWidget(
+        wrap(
+          PhotoViewerScreen(photo: photo, upgradeTransport: transport, upgradeDecoder: decoder),
+          provider: multi.provider,
+        ),
+      );
+      await tester.pump();
+      return transport;
+    }
+
+    TransformationController zoomOf(WidgetTester tester) =>
+        tester.widget<InteractiveViewer>(find.byType(InteractiveViewer)).transformationController!;
+
+    Future<void> zoomTo(WidgetTester tester, double scale) async {
+      zoomOf(tester).value = Matrix4.diagonal3Values(scale, scale, 1);
+      await tester.pump();
+    }
+
+    String screenSizedUrl(WidgetTester tester) {
+      final provider = tester.widget<Image>(find.byType(Image)).image as ResizeImage;
+      return (provider.imageProvider as CachedNetworkImageProvider).url;
+    }
+
+    Iterable<RawImage> paintedImages(WidgetTester tester) =>
+        tester.widgetList<RawImage>(find.byType(RawImage)).where((image) => image.image != null);
+
+    /// Image decoding needs real time, which widget tests only get in runAsync.
+    Future<void> settleDecode(WidgetTester tester, {required bool Function() until}) async {
+      for (var i = 0; i < 200 && !until(); i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 5)));
+        await tester.pump();
+      }
+    }
+
+    testWidgets('stays on the screen-sized image up to and including 1.5x', (tester) async {
+      final transport = await open(tester, _photo(width: 5128, height: 3190));
+
+      await zoomTo(tester, 1.2);
+      await zoomTo(tester, 1.5);
+
+      expect(transport.requests, isEmpty);
+      expect(screenSizedUrl(tester), 'https://server$_partPath?edge=1000');
+    });
+
+    testWidgets('requests one image at the original size past 1.5x', (tester) async {
+      final transport = await open(tester, _photo(width: 5128, height: 3190));
+
+      await zoomTo(tester, 1.51);
+      await zoomTo(tester, 1);
+      await zoomTo(tester, 3);
+
+      expect(transport.requests.map((request) => request.url.toString()), ['https://server$_partPath?edge=5128']);
+    });
+
+    testWidgets('uses the long edge of a portrait original', (tester) async {
+      final transport = await open(tester, _photo(width: 3190, height: 5128));
+
+      await zoomTo(tester, 2);
+
+      expect(transport.requests.single.url.queryParameters['edge'], '5128');
+    });
+
+    testWidgets('caps the request at 8192', (tester) async {
+      final transport = await open(tester, _photo(width: 12000, height: 8000));
+
+      await zoomTo(tester, 2);
+
+      expect(transport.requests.single.url.queryParameters['edge'], '8192');
+    });
+
+    testWidgets('a pinch triggers the upgrade once past 1.5x, and zooms from its first movement', (tester) async {
+      final transport = await open(tester, _photo(width: 5128, height: 3190));
+      final center = tester.getCenter(find.byType(InteractiveViewer));
+
+      final first = await tester.startGesture(center - const Offset(50, 0));
+      await tester.pump();
+      final second = await tester.startGesture(center + const Offset(50, 0));
+      await tester.pump();
+
+      Future<void> spread(int steps) async {
+        for (var i = 0; i < steps; i++) {
+          await first.moveBy(const Offset(-10, 0));
+          await second.moveBy(const Offset(10, 0));
+          await tester.pump();
+        }
+      }
+
+      // From fingers 100 apart to 140: a double-tap recognizer in the arena
+      // would still be holding this back as slop.
+      await spread(2);
+      expect(zoomOf(tester).value.getMaxScaleOnAxis(), closeTo(1.4, 0.01));
+      expect(transport.requests, isEmpty);
+
+      await spread(10);
+      expect(zoomOf(tester).value.getMaxScaleOnAxis(), closeTo(3.4, 0.01));
+      expect(transport.requests, hasLength(1));
+
+      await first.up();
+      await second.up();
+      await tester.pump(const Duration(seconds: 1));
+      expect(transport.requests, hasLength(1));
+    });
+
+    testWidgets('a double tap zooms around the tap, triggers the upgrade, and zooms back out', (tester) async {
+      final transport = await open(tester, _photo(width: 5128, height: 3190));
+      final viewer = find.byType(InteractiveViewer);
+      final tapped = tester.getTopLeft(viewer) + const Offset(100, 50);
+
+      Future<void> doubleTap() async {
+        await tester.tapAt(tapped);
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tapAt(tapped);
+        await tester.pump(kDoubleTapTimeout);
+      }
+
+      await doubleTap();
+      expect(zoomOf(tester).value.getMaxScaleOnAxis(), 2.5);
+      final tappedInViewer = tester.firstRenderObject<RenderBox>(viewer).globalToLocal(tapped);
+      expect(MatrixUtils.transformPoint(zoomOf(tester).value, const Offset(100, 50)), tappedInViewer);
+      expect(transport.requests, hasLength(1));
+
+      await doubleTap();
+      expect(zoomOf(tester).value, Matrix4.identity());
+      expect(transport.requests, hasLength(1));
+    });
+
+    group('double tap detection', () {
+      Future<void> tapAt(WidgetTester tester, Offset position, Duration at) async {
+        final gesture = await tester.createGesture();
+        await gesture.down(position, timeStamp: at);
+        await tester.pump();
+        await gesture.up(timeStamp: at + const Duration(milliseconds: 20));
+        await tester.pump();
+      }
+
+      testWidgets('two taps further apart in time do not zoom', (tester) async {
+        await open(tester, _photo(width: 5128, height: 3190));
+        final center = tester.getCenter(find.byType(InteractiveViewer));
+
+        await tapAt(tester, center, Duration.zero);
+        await tapAt(tester, center, kDoubleTapTimeout + const Duration(milliseconds: 100));
+
+        expect(zoomOf(tester).value, Matrix4.identity());
+      });
+
+      testWidgets('two taps far apart on screen do not zoom', (tester) async {
+        await open(tester, _photo(width: 5128, height: 3190));
+        final center = tester.getCenter(find.byType(InteractiveViewer));
+
+        await tapAt(tester, center - const Offset(150, 0), Duration.zero);
+        await tapAt(tester, center + const Offset(150, 0), const Duration(milliseconds: 100));
+
+        expect(zoomOf(tester).value, Matrix4.identity());
+      });
+
+      testWidgets('two fingers landing right after a tap do not zoom', (tester) async {
+        await open(tester, _photo(width: 5128, height: 3190));
+        final center = tester.getCenter(find.byType(InteractiveViewer));
+
+        await tapAt(tester, center, Duration.zero);
+        final first = await tester.createGesture(pointer: 11);
+        final second = await tester.createGesture(pointer: 12);
+        await first.down(center, timeStamp: const Duration(milliseconds: 100));
+        await second.down(center + const Offset(40, 0), timeStamp: const Duration(milliseconds: 110));
+        await first.up(timeStamp: const Duration(milliseconds: 150));
+        await second.up(timeStamp: const Duration(milliseconds: 160));
+        await tester.pump();
+
+        expect(zoomOf(tester).value, Matrix4.identity());
+      });
+
+      testWidgets('a second press that drags pans instead of zooming', (tester) async {
+        await open(tester, _photo(width: 5128, height: 3190));
+        final center = tester.getCenter(find.byType(InteractiveViewer));
+
+        await tapAt(tester, center, Duration.zero);
+        final drag = await tester.createGesture();
+        await drag.down(center, timeStamp: const Duration(milliseconds: 100));
+        await tester.pump();
+        await drag.moveBy(const Offset(60, 0));
+        await tester.pump();
+        await drag.up();
+        await tester.pump(const Duration(seconds: 1));
+
+        expect(zoomOf(tester).value.getMaxScaleOnAxis(), 1);
+      });
+
+      testWidgets('a drag pans a zoomed photo from its first movement', (tester) async {
+        await open(tester, _photo(width: 5128, height: 3190));
+        await zoomTo(tester, 3);
+        zoomOf(tester).value = Matrix4.diagonal3Values(3, 3, 1)..setTranslationRaw(-500, -250, 0);
+        final center = tester.getCenter(find.byType(InteractiveViewer));
+
+        final drag = await tester.startGesture(center);
+        await tester.pump();
+        await drag.moveBy(const Offset(10, 0));
+        await tester.pump();
+
+        expect(zoomOf(tester).value.getTranslation().x, greaterThan(-500));
+        await drag.up();
+        await tester.pump(const Duration(seconds: 1));
+      });
+    });
+
+    testWidgets('the mouse wheel triggers the upgrade', (tester) async {
+      final transport = await open(tester, _photo(width: 5128, height: 3190));
+      final pointer = TestPointer(1, PointerDeviceKind.mouse);
+
+      await tester.sendEventToBinding(pointer.hover(tester.getCenter(find.byType(InteractiveViewer))));
+      await tester.sendEventToBinding(pointer.scroll(const Offset(0, -500)));
+      await tester.pump();
+
+      expect(transport.requests, hasLength(1));
+    });
+
+    testWidgets('D-pad keys neither zoom nor request anything', (tester) async {
+      final transport = await open(tester, _photo(width: 5128, height: 3190));
+
+      for (final key in [
+        LogicalKeyboardKey.arrowUp,
+        LogicalKeyboardKey.arrowDown,
+        LogicalKeyboardKey.arrowLeft,
+        LogicalKeyboardKey.arrowRight,
+      ]) {
+        await tester.sendKeyEvent(key);
+        await tester.pump();
+      }
+
+      expect(zoomOf(tester).value, Matrix4.identity());
+      expect(transport.requests, isEmpty);
+      expect(find.byType(PhotoViewerScreen), findsOneWidget);
+    });
+
+    testWidgets('makes no request when the original is no larger than what is loaded', (tester) async {
+      final transport = await open(tester, _photo(width: 1000, height: 800));
+
+      await zoomTo(tester, 3);
+
+      expect(transport.requests, isEmpty);
+    });
+
+    testWidgets('makes no request when a dimension is missing', (tester) async {
+      final transport = await open(tester, _photo(width: 5128));
+
+      await zoomTo(tester, 3);
+
+      expect(transport.requests, isEmpty);
+    });
+
+    testWidgets('swaps in the decoded image without moving the zoom or the layout', (tester) async {
+      final transport = await open(tester, _photo(width: 5128, height: 3190));
+      final zoom = Matrix4.diagonal3Values(3, 3, 1)..setTranslationRaw(-200, -100, 0);
+      zoomOf(tester).value = zoom;
+      await tester.pump();
+      final sizeBefore = tester.getSize(find.byType(RawImage));
+
+      expect(screenSizedUrl(tester), contains('edge=1000'));
+      expect(paintedImages(tester), isEmpty);
+
+      transport.respond(_pngBytes);
+      await settleDecode(tester, until: () => paintedImages(tester).isNotEmpty);
+
+      expect(paintedImages(tester).single.image!.width, 1);
+      expect(find.byType(Image), findsNothing);
+      expect(zoomOf(tester).value, zoom);
+      expect(tester.getSize(find.byType(RawImage)), sizeBefore);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a failed request keeps the screen-sized image and does not retry', (tester) async {
+      final transport = await open(tester, _photo(width: 5128, height: 3190));
+
+      await zoomTo(tester, 2);
+      transport.fail();
+      await tester.pump();
+      await zoomTo(tester, 1);
+      await zoomTo(tester, 4);
+
+      expect(screenSizedUrl(tester), 'https://server$_partPath?edge=1000');
+      expect(find.text(t.errors.unableToLoad(context: 'Photo')), findsNothing);
+      expect(transport.requests, hasLength(1));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('an answer that is not an image keeps the screen-sized image', (tester) async {
+      final transport = await open(tester, _photo(width: 5128, height: 3190));
+
+      await zoomTo(tester, 2);
+      transport.respond(utf8.encode('Internal Server Error'), status: 500);
+      await settleDecode(tester, until: () => transport.closed);
+
+      expect(screenSizedUrl(tester), 'https://server$_partPath?edge=1000');
+      expect(paintedImages(tester), isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('leaving the viewer cancels the request', (tester) async {
+      final transport = await open(tester, _photo(width: 5128, height: 3190));
+
+      await zoomTo(tester, 2);
+      expect(transport.aborted, isFalse);
+
+      await tester.pumpWidget(wrap(const SizedBox()));
+      await tester.pump();
+
+      expect(transport.aborted, isTrue);
+      expect(transport.closed, isTrue);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('an image that finishes decoding after the viewer closed is disposed', (tester) async {
+      final decoding = Completer<ui.Image>();
+      ui.ImmutableBuffer? handedOver;
+      final transport = await open(
+        tester,
+        _photo(width: 5128, height: 3190),
+        decoder: (buffer, edge) {
+          handedOver = buffer;
+          return decoding.future;
+        },
+      );
+      await zoomTo(tester, 2);
+      transport.respond(_pngBytes);
+      await settleDecode(tester, until: () => handedOver != null);
+      expect(handedOver, isNotNull);
+
+      await tester.pumpWidget(wrap(const SizedBox()));
+      final image = (await tester.runAsync(() => createTestImage(width: 1, height: 1)))!;
+      decoding.complete(image);
+      await tester.pump();
+
+      expect(image.debugDisposed, isTrue);
+      expect(tester.takeException(), isNull);
+      handedOver!.dispose();
+    });
+
+    group('decoded size', () {
+      setUp(DevicePerformance.debugReset);
+      tearDown(DevicePerformance.debugReset);
+
+      /// A PNG [width] by [height], so the decode has a real size to work with.
+      Future<List<int>> png(WidgetTester tester, int width, int height) async {
+        return (await tester.runAsync(() async {
+          final recorder = ui.PictureRecorder();
+          Canvas(recorder).drawRect(Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()), Paint());
+          final image = await recorder.endRecording().toImage(width, height);
+          final data = await image.toByteData(format: ui.ImageByteFormat.png);
+          image.dispose();
+          return data!.buffer.asUint8List();
+        }))!;
+      }
+
+      Future<ui.Image> decodedAfterServerSends(
+        WidgetTester tester,
+        MediaItem photo, {
+        required int width,
+        required int height,
+      }) async {
+        final bytes = await png(tester, width, height);
+        final transport = await open(tester, photo);
+        await zoomTo(tester, 2);
+        transport.respond(bytes);
+        await settleDecode(tester, until: () => paintedImages(tester).isNotEmpty);
+        return paintedImages(tester).single.image!;
+      }
+
+      testWidgets('stays inside the requested edge when the server sends more', (tester) async {
+        final image = await decodedAfterServerSends(tester, _photo(width: 5128, height: 3190), width: 6000, height: 40);
+
+        expect((image.width, image.height), (5128, 34));
+      });
+
+      testWidgets('caps a very large original at 8192', (tester) async {
+        final image = await decodedAfterServerSends(
+          tester,
+          _photo(width: 12000, height: 8000),
+          width: 9000,
+          height: 60,
+        );
+
+        expect((image.width, image.height), (8192, 55));
+      });
+
+      testWidgets('caps it at 4096 on the reduced tier, in the request and the decode', (tester) async {
+        DevicePerformance.debugReset(autoReduced: true);
+        expect(DevicePerformance.isReduced, isTrue);
+        final bytes = await png(tester, 6000, 40);
+        final transport = await open(tester, _photo(width: 12000, height: 8000));
+
+        await zoomTo(tester, 2);
+        expect(transport.requests.single.url.queryParameters['edge'], '4096');
+        transport.respond(bytes);
+        await settleDecode(tester, until: () => paintedImages(tester).isNotEmpty);
+
+        final image = paintedImages(tester).single.image!;
+        expect((image.width, image.height), (4096, 27));
+      });
+    });
+
+    testWidgets('a Plex row asks the transcoder for the Part at the original size', (tester) async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      PlexApiCache.initialize(database);
+      final photo = PlexMappers.mediaItem(
+        PlexMetadataDto.fromJsonWithImages({
+          'ratingKey': '302855',
+          'key': '/library/metadata/302855',
+          'type': 'photo',
+          'title': 'Photo',
+          'thumb': '/library/metadata/302855/thumb/1',
+          'Media': [
+            {
+              'id': 1,
+              'width': 5128,
+              'height': 3190,
+              'Part': [
+                {'id': 2, 'key': _partPath},
+              ],
+            },
+          ],
+        }).copyWith(serverId: ServerId('server_1')),
+      );
+
+      final transport = await open(tester, photo, client: testPlexClient(serverId: ServerId('server_1')));
+      await zoomTo(tester, 2);
+
+      final url = transport.requests.single.url;
+      expect(url.path, '/photo/:/transcode');
+      expect(url.queryParameters['width'], '5128');
+      expect(url.queryParameters['height'], '5128');
+      expect(url.queryParameters['minSize'], '0');
+      expect(url.queryParameters['upscale'], '0');
+      expect(url.queryParameters['url'], '$_partPath?X-Plex-Token=token');
+    });
+
+    testWidgets('a Jellyfin photo with dimensions asks its image route for the original size', (tester) async {
+      final transport = await open(
+        tester,
+        _jellyfinPhoto(mediaVersions: const [MediaVersion(id: '1', width: 5128, height: 3190)]),
+        client: testJellyfinClient(),
+      );
+
+      await zoomTo(tester, 2);
+
+      final url = transport.requests.single.url;
+      expect(url.path, '/Items/1/Images/Primary');
+      expect(url.queryParameters['maxWidth'], '5128');
+      expect(url.queryParameters['maxHeight'], '5128');
+    });
+
+    for (final dialect in MediaBrowserDialect.values) {
+      testWidgets('a ${dialect.name} photo row with only its own size is upgraded', (tester) async {
+        final photo = JellyfinMappers.mediaItem(
+          {
+            'Id': '1',
+            'Type': 'Photo',
+            'Name': 'Photo',
+            'Width': 6024,
+            'Height': 4024,
+            'ImageTags': {'Primary': 'abc'},
+          },
+          serverId: ServerId('srv-1'),
+          absolutizer: null,
+          dialect: dialect,
+        )!;
+        final transport = await open(tester, photo, client: testJellyfinClient());
+
+        await zoomTo(tester, 2);
+
+        final url = transport.requests.single.url;
+        expect(url.path, '/Items/1/Images/Primary');
+        expect(url.queryParameters['maxWidth'], '6024');
+        expect(url.queryParameters['maxHeight'], '6024');
+      });
+    }
+
+    testWidgets('a Jellyfin photo with no dimensions skips the upgrade', (tester) async {
+      final transport = await open(tester, _jellyfinPhoto(), client: testJellyfinClient());
+
+      await zoomTo(tester, 2);
+
+      expect(transport.requests, isEmpty);
+    });
+  });
 }
 
-MediaItem _photo() =>
+MediaItem _photo({int? width, int? height}) =>
     testMediaItem(
       id: '1',
       backend: MediaBackend.plex,
@@ -562,13 +1088,56 @@ MediaItem _photo() =>
       thumbPath: _thumbPath,
       serverId: 'server_1',
     ).copyWith(
-      mediaVersions: const [
+      mediaVersions: [
         MediaVersion(
           id: '1',
-          parts: [MediaPart(id: 'p1', streamPath: _partPath)],
+          width: width,
+          height: height,
+          parts: const [MediaPart(id: 'p1', streamPath: _partPath)],
         ),
       ],
     );
+
+MediaItem _jellyfinPhoto({List<MediaVersion>? mediaVersions}) => testMediaItem(
+  id: '1',
+  backend: MediaBackend.jellyfin,
+  kind: MediaKind.photo,
+  title: 'Photo',
+  thumbPath: '/Items/1/Images/Primary?tag=abc',
+  serverId: 'srv-1',
+).copyWith(mediaVersions: mediaVersions);
+
+/// Stands in for the platform transport under the real [http.Client] wrapper,
+/// and answers only when the test says so.
+class _FakeTransport extends http.BaseClient {
+  final requests = <http.BaseRequest>[];
+  final _response = Completer<http.StreamedResponse>();
+  var aborted = false;
+  var closed = false;
+
+  void respond(List<int> bytes, {int status = 200}) {
+    _response.complete(http.StreamedResponse(Stream.value(bytes), status, contentLength: bytes.length));
+  }
+
+  void fail() => _response.completeError(http.ClientException('offline'));
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    requests.add(request);
+    if (request case http.Abortable(:final abortTrigger?)) {
+      unawaited(
+        abortTrigger.then((_) {
+          aborted = true;
+          if (!_response.isCompleted) _response.completeError(http.RequestAbortedException(request.url));
+        }),
+      );
+    }
+    return _response.future;
+  }
+
+  @override
+  void close() => closed = true;
+}
 
 /// Answers every image request with no URL, which the viewer treats as a
 /// failed load, so the sequence of attempts shows without touching the network.

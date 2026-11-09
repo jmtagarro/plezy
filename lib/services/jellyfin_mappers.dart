@@ -286,7 +286,7 @@ class JellyfinMappers {
       styles: null,
       moods: null,
       roles: _actors(item['People']),
-      mediaVersions: _mediaVersions(item['MediaSources']),
+      mediaVersions: _withPhotoSize(id, kind, item, _mediaVersions(item['MediaSources'])),
       // Neither dialect sends a library field on an item DTO: `ParentId` is a
       // season or physical folder and `SeriesStudio` is a studio, never the
       // owning CollectionFolder. Library identity comes only from explicit
@@ -526,6 +526,39 @@ class JellyfinMappers {
     final tag = person['PrimaryImageTag'] as String?;
     if (id == null) return null;
     return _itemImagePath(id, 'Primary', tag: tag);
+  }
+
+  /// A photo's size, which the viewer needs to fetch it at full resolution.
+  /// `MediaSources` carries it when the server fills it in; otherwise the
+  /// item's own `Width` and `Height` stand in, on the first version or on a
+  /// version of their own.
+  static List<MediaVersion>? _withPhotoSize(
+    String id,
+    MediaKind kind,
+    Map<String, dynamic> item,
+    List<MediaVersion>? versions,
+  ) {
+    if (kind != MediaKind.photo) return versions;
+    final first = versions?.firstOrNull;
+    if (first?.width != null && first?.height != null) return versions;
+    final width = flexibleInt(item['Width']);
+    final height = flexibleInt(item['Height']);
+    if (width == null || height == null) return versions;
+    if (first == null) return [MediaVersion(id: id, width: width, height: height)];
+    return [
+      MediaVersion(
+        id: first.id,
+        width: width,
+        height: height,
+        videoResolution: first.videoResolution,
+        videoCodec: first.videoCodec,
+        bitrate: first.bitrate,
+        container: first.container,
+        parts: first.parts,
+        name: first.name,
+      ),
+      ...versions!.skip(1),
+    ];
   }
 
   static List<MediaVersion>? _mediaVersions(Object? sources) {
