@@ -144,7 +144,7 @@ class WatchNextProvider internal constructor(
   )
 
   private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-  private val artwork = SystemShelfArtworkStore(context.cacheDir)
+  private val artwork = SystemShelfArtworkStore(context)
   private data class CommittedPublication(
     val ownerId: String,
     val generation: Long,
