@@ -45,6 +45,10 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
   /// Re-invoked by the retry timer. Most recent range-load args.
   VoidCallback? _scheduledRetry;
 
+  /// Completed when the next range fetch settles, for [loadItemAt] callers
+  /// waiting on a fetch they did not start.
+  Completer<void>? _fetchSettled;
+
   /// Size of the page whose response set [totalSize] to a [fallbackPageTotal]
   /// sentinel (a full page, total claimed one past it), or null when the total
   /// looks authoritative. Such a total is no bound on the next request.
@@ -78,6 +82,7 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
     _openEndedPageSize = null;
     loadedItems.clear();
     _loadingRanges.clear();
+    _settleWaiters();
     totalSize = 0;
   }
 
@@ -330,6 +335,27 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
     _fetchRange(pageStart, pageSize);
   }
 
+  /// The item at [index], fetching the page that holds it when it is not
+  /// loaded. For callers that step through the list away from the viewport.
+  /// Null when [index] is out of range or its page cannot be fetched. A fetch
+  /// already running for [index] is waited on rather than repeated.
+  Future<T?> loadItemAt(int index, {int pageSize = 200}) async {
+    if (loadedItems[index] case final item?) return item;
+    if (index < 0 || index >= totalSize) return null;
+    if (_loadingRanges.contains(index)) {
+      await (_fetchSettled ??= Completer<void>()).future;
+    } else {
+      await _fetchRange((index ~/ pageSize) * pageSize, pageSize);
+    }
+    return mounted ? loadedItems[index] : null;
+  }
+
+  void _settleWaiters() {
+    final settled = _fetchSettled;
+    _fetchSettled = null;
+    settled?.complete();
+  }
+
   /// Aborts in-flight requests and cancels timers. Call from `dispose()`.
   void disposePagination() {
     _requestId++;
@@ -340,6 +366,7 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
     _loadingRanges.clear();
     _paginationError = null;
     _scheduledRetry = null;
+    _settleWaiters();
   }
 
   Future<bool> _fetchRange(int start, int size) async {
@@ -391,6 +418,7 @@ mixin PaginatedItemLoader<T, W extends StatefulWidget> on State<W> {
       return false;
     } finally {
       _loadingRanges.removeAll(indices);
+      _settleWaiters();
       onPaginationStateChanged();
     }
   }

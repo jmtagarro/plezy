@@ -807,7 +807,9 @@
     "shufflePlay": "Afspil tilfældigt",
     "playTrailer": "Afspil trailer",
     "markAsWatched": "Markér som set",
-    "markAsUnwatched": "Markér som uset"
+    "markAsUnwatched": "Markér som uset",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "Lydspor ${n}"

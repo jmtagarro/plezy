@@ -804,7 +804,9 @@
     "shufflePlay": "シャッフル再生",
     "playTrailer": "予告編を再生",
     "markAsWatched": "視聴済みにする",
-    "markAsUnwatched": "未視聴にする"
+    "markAsUnwatched": "未視聴にする",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "音声トラック${n}"

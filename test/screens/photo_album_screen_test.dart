@@ -1,5 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/database/app_database.dart';
 import 'package:plezy/focus/input_mode_tracker.dart';
@@ -14,6 +15,7 @@ import 'package:plezy/media/server_capabilities.dart';
 import 'package:plezy/providers/download_provider.dart';
 import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/screens/photo_album_screen.dart';
+import 'package:plezy/screens/photo_sequence_viewer.dart';
 import 'package:plezy/screens/photo_viewer_screen.dart';
 import 'package:plezy/services/download_manager_service.dart';
 import 'package:plezy/services/download_storage_service.dart';
@@ -121,11 +123,157 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(PhotoViewerScreen), findsOneWidget);
   });
+
+  group('moving through the photos', () {
+    String shownPhoto(WidgetTester tester) => tester.widget<PhotoViewerScreen>(find.byType(PhotoViewerScreen)).photo.id;
+
+    FocusNode cardFocus(WidgetTester tester, String title) =>
+        tester.widget<FocusableMediaCard>(find.widgetWithText(FocusableMediaCard, title)).focusNode!;
+
+    Future<void> press(WidgetTester tester, LogicalKeyboardKey key) async {
+      await tester.sendKeyEvent(key);
+      await tester.pumpAndSettle();
+    }
+
+    /// Opens the card titled [title] with the keyboard, which puts the app in
+    /// keyboard mode.
+    Future<void> openWithKeyboard(WidgetTester tester, String title) async {
+      cardFocus(tester, title).requestFocus();
+      await tester.pump();
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(find.byType(PhotoSequenceViewer), findsOneWidget);
+    }
+
+    final children = [
+      _item('a', MediaKind.photo, 'A'),
+      _item('clip', MediaKind.clip, 'Waves'),
+      _item('b', MediaKind.photo, 'B'),
+      _item('nested', MediaKind.photoAlbum, 'Day one'),
+      _item('c', MediaKind.photo, 'C'),
+    ];
+
+    testWidgets('follow the grid, skipping clips and albums', (tester) async {
+      await tester.pumpWidget(
+        await wrap(
+          PhotoAlbumScreen(album: _album),
+          clients: [
+            _AlbumClient({'album': children}),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('A'));
+      await tester.pumpAndSettle();
+      expect(shownPhoto(tester), 'a');
+
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(shownPhoto(tester), 'b');
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(shownPhoto(tester), 'c');
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(shownPhoto(tester), 'c');
+    });
+
+    testWidgets('a nested album still opens as its card does, not in the viewer', (tester) async {
+      await tester.pumpWidget(
+        await wrap(
+          PhotoAlbumScreen(album: _album),
+          clients: [
+            _AlbumClient({'album': children}),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Day one'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PhotoSequenceViewer), findsNothing);
+      expect(find.byType(PhotoAlbumScreen, skipOffstage: false), findsNWidgets(2));
+    });
+
+    testWidgets('closing the viewer focuses the card of the photo it showed', (tester) async {
+      await tester.pumpWidget(
+        await wrap(
+          PhotoAlbumScreen(album: _album),
+          clients: [
+            _AlbumClient({'album': children}),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await openWithKeyboard(tester, 'A');
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      await press(tester, LogicalKeyboardKey.escape);
+
+      expect(find.byType(PhotoSequenceViewer), findsNothing);
+      expect(FocusManager.instance.primaryFocus, cardFocus(tester, 'C'));
+    });
+
+    group('in a long album', () {
+      // A photo first, then clips, with the second photo on the second page.
+      final long = [
+        for (var i = 0; i < 300; i++)
+          i == 0
+              ? _item('a', MediaKind.photo, 'A')
+              : i == 251
+              ? _item('b', MediaKind.photo, 'B')
+              : _item('clip$i', MediaKind.clip, 'Clip $i'),
+      ];
+
+      void expectOnScreen(WidgetTester tester, String title) {
+        final card = tester.getRect(find.widgetWithText(FocusableMediaCard, title));
+        final screen = Offset.zero & tester.view.physicalSize / tester.view.devicePixelRatio;
+        expect(screen.contains(card.center), isTrue, reason: '$card on $screen');
+      }
+
+      testWidgets('the viewer loads the next page, and closing reveals the card far down', (tester) async {
+        final client = _AlbumClient({'album': long});
+        await tester.pumpWidget(await wrap(PhotoAlbumScreen(album: _album), clients: [client]));
+        await tester.pumpAndSettle();
+
+        await openWithKeyboard(tester, 'A');
+        await press(tester, LogicalKeyboardKey.arrowRight);
+        expect(shownPhoto(tester), 'b');
+        expect(client.fetchedStarts, [0, 200]);
+
+        await press(tester, LogicalKeyboardKey.escape);
+        expect(FocusManager.instance.primaryFocus, cardFocus(tester, 'B'));
+        expectOnScreen(tester, 'B');
+      });
+
+      testWidgets('with touch, closing scrolls the card into view', (tester) async {
+        await tester.pumpWidget(
+          await wrap(
+            PhotoAlbumScreen(album: _album),
+            clients: [
+              _AlbumClient({'album': long}),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('A'));
+        await tester.pumpAndSettle();
+        await tester.dragFrom(tester.getCenter(find.byType(InteractiveViewer)), const Offset(-200, 0));
+        await tester.pumpAndSettle();
+        expect(shownPhoto(tester), 'b');
+
+        await tester.tap(find.byTooltip(t.common.back));
+        await tester.pumpAndSettle();
+        expectOnScreen(tester, 'B');
+      });
+    });
+  });
 }
 
 class _AlbumClient implements MediaServerClient {
   final Map<String, List<MediaItem>> childrenByParent;
   final fetchedParents = <String>[];
+  final fetchedStarts = <int?>[];
 
   _AlbumClient(this.childrenByParent);
 
@@ -149,6 +297,7 @@ class _AlbumClient implements MediaServerClient {
     AbortController? abort,
   }) async {
     fetchedParents.add(parentId);
+    fetchedStarts.add(start);
     return fakeLibraryPage(childrenByParent[parentId] ?? const [], start: start, size: size);
   }
 

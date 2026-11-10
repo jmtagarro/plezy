@@ -807,7 +807,9 @@
     "shufflePlay": "Blanda uppspelning",
     "playTrailer": "Spela trailer",
     "markAsWatched": "Markera som sedd",
-    "markAsUnwatched": "Markera som osedd"
+    "markAsUnwatched": "Markera som osedd",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "Ljudspår ${n}"

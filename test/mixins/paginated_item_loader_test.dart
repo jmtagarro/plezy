@@ -717,5 +717,92 @@ void main() {
       expect(freshResult.applied, isTrue);
       expect(state.totalSize, 99);
     });
+
+    group('loadItemAt', () {
+      testWidgets('returns a loaded item without fetching', (tester) async {
+        late _PaginatedProbeState state;
+        await tester.pumpWidget(
+          _PaginatedProbe(
+            onState: (s) => state = s,
+            fetcher: (start, size, abort) async => _result(start: start, size: size, totalSize: 30),
+          ),
+        );
+        await state.loadInitialPage(10);
+
+        expect((await state.loadItemAt(4))?.id, 'k4');
+        expect(state.fetchCalls, 1);
+      });
+
+      testWidgets('fetches the page that holds the item', (tester) async {
+        late _PaginatedProbeState state;
+        await tester.pumpWidget(
+          _PaginatedProbe(
+            onState: (s) => state = s,
+            fetcher: (start, size, abort) async =>
+                _result(start: start, size: (30 - start).clamp(0, size), totalSize: 30),
+          ),
+        );
+        await state.loadInitialPage(10);
+
+        expect((await state.loadItemAt(23, pageSize: 10))?.id, 'k23');
+        expect(state.fetchArgs.last, (start: 20, size: 10));
+      });
+
+      testWidgets('waits for a fetch already running instead of starting another', (tester) async {
+        late _PaginatedProbeState state;
+        final pending = <Completer<LibraryPage<MediaItem>>>[];
+        await tester.pumpWidget(
+          _PaginatedProbe(
+            onState: (s) => state = s,
+            fetcher: (start, size, abort) {
+              if (start == 0) return Future.value(_result(start: 0, size: 10, totalSize: 30));
+              final completer = Completer<LibraryPage<MediaItem>>();
+              pending.add(completer);
+              return completer.future;
+            },
+          ),
+        );
+        await state.loadInitialPage(10);
+        state.ensureIndexLoaded(15, pageSize: 10);
+        expect(state.fetchCalls, 2);
+
+        final item = state.loadItemAt(15, pageSize: 10);
+        await tester.pump();
+        expect(state.fetchCalls, 2);
+
+        pending.single.complete(_result(start: 10, size: 10, totalSize: 30));
+        expect((await item)?.id, 'k15');
+      });
+
+      testWidgets('is null out of range, after a failed fetch, and when the list resets meanwhile', (tester) async {
+        late _PaginatedProbeState state;
+        final pending = <Completer<LibraryPage<MediaItem>>>[];
+        await tester.pumpWidget(
+          _PaginatedProbe(
+            onState: (s) => state = s,
+            fetcher: (start, size, abort) {
+              if (start == 0) return Future.value(_result(start: 0, size: 10, totalSize: 30));
+              if (start == 10) return Future.error(StateError('failed page'));
+              final completer = Completer<LibraryPage<MediaItem>>();
+              pending.add(completer);
+              return completer.future;
+            },
+          ),
+        );
+        await state.loadInitialPage(10);
+
+        expect(await state.loadItemAt(30, pageSize: 10), isNull);
+        expect(await state.loadItemAt(-1, pageSize: 10), isNull);
+        expect(await state.loadItemAt(12, pageSize: 10), isNull);
+
+        state.ensureIndexLoaded(25, pageSize: 10);
+        final waiting = state.loadItemAt(25, pageSize: 10);
+        // ignore: invalid_use_of_protected_member
+        state.setState(() => state.resetPaginationState());
+        expect(await waiting, isNull);
+        // Let the retry timer of the failed fetch run out.
+        await tester.pump(const Duration(seconds: 5));
+      });
+    });
   });
 }

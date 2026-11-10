@@ -807,7 +807,9 @@
     "shufflePlay": "Aralashtirib ijro etish",
     "playTrailer": "Treylerni koʻrish",
     "markAsWatched": "Koʻrilgan deb belgilash",
-    "markAsUnwatched": "Koʻrilmagan deb belgilash"
+    "markAsUnwatched": "Koʻrilmagan deb belgilash",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "Audio yoʻlak ${n}"

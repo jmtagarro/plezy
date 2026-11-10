@@ -807,7 +807,9 @@
     "shufflePlay": "Разбъркано възпроизвеждане",
     "playTrailer": "Пусни трейлър",
     "markAsWatched": "Маркирай като гледано",
-    "markAsUnwatched": "Маркирай като негледано"
+    "markAsUnwatched": "Маркирай като негледано",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "Аудиопътечка ${n}"

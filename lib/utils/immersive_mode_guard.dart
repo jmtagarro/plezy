@@ -30,8 +30,12 @@ abstract final class ImmersiveModeGuard {
     unawaited(SystemChrome.setSystemUIChangeCallback(_onSystemUiChange));
   }
 
-  static void release(Object owner) {
-    if (identical(_owner, owner)) _owner = null;
+  /// Whether [owner] still owned immersive mode. A predecessor that lost it to
+  /// a successor must leave the system UI as the successor set it.
+  static bool release(Object owner) {
+    if (!identical(_owner, owner)) return false;
+    _owner = null;
+    return true;
   }
 
   static Future<void> _onSystemUiChange(bool systemOverlaysAreVisible) async {

@@ -813,7 +813,9 @@
     "shufflePlay": "Случайное воспроизведение",
     "playTrailer": "Воспроизвести трейлер",
     "markAsWatched": "Отметить как просмотренное",
-    "markAsUnwatched": "Отметить как непросмотренное"
+    "markAsUnwatched": "Отметить как непросмотренное",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "Аудиодорожка ${n}"

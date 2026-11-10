@@ -29,6 +29,8 @@ import 'package:plezy/screens/libraries/alpha_scroll_handle.dart';
 import 'package:plezy/screens/libraries/sort_bottom_sheet.dart';
 import 'package:plezy/screens/libraries/state_messages.dart';
 import 'package:plezy/screens/libraries/tabs/library_browse_tab.dart';
+import 'package:plezy/screens/photo_sequence_viewer.dart';
+import 'package:plezy/screens/photo_viewer_screen.dart';
 import 'package:plezy/services/jellyfin_mappers.dart';
 import 'package:plezy/services/multi_server_manager.dart';
 import 'package:plezy/services/plex_api_cache.dart';
@@ -440,7 +442,70 @@ void main() {
     // has to carry the start offset too.
     expect(harness.filterMetadataRequests.single.queryParameters['X-Plex-Container-Start'], '0');
   });
+
+  testWidgets('a photo at the library root moves through the library\'s photos, and closing focuses the last one', (
+    tester,
+  ) async {
+    final client = _BrowseClient('server-a', 'Photos');
+    client.pageResponses.add(
+      () async => LibraryPage<MediaItem>(
+        items: [
+          _photoLibraryItem('a', MediaKind.photo),
+          _photoLibraryItem('trip', MediaKind.photoAlbum),
+          _photoLibraryItem('b', MediaKind.photo),
+        ],
+        totalCount: 3,
+      ),
+    );
+    final manager = MultiServerManager()..debugRegisterClientForTesting(client);
+    final provider = testMultiServerProvider(manager);
+    addTearDown(() {
+      provider.dispose();
+      manager.dispose();
+    });
+    final library = MediaLibrary(
+      id: 'photos',
+      backend: MediaBackend.jellyfin,
+      title: 'Photos',
+      kind: MediaKind.photo,
+      serverId: client.serverId,
+    );
+    await pumpLibraryTab(
+      tester,
+      provider: provider,
+      tab: LibraryBrowseTab(library: library, canGroupByFolders: true, isActive: true, onBack: () {}),
+    );
+    await pumpRequestFrames(tester);
+
+    // Albums keep their card's own tap.
+    expect(_cardFor(tester, 'TRIP').onTap, isNull);
+
+    await _enterKeyboardMode(tester);
+    _cardFor(tester, 'A').focusNode!.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.byType(PhotoSequenceViewer), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(tester.widget<PhotoViewerScreen>(find.byType(PhotoViewerScreen)).photo.id, 'b');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byType(PhotoSequenceViewer), findsNothing);
+    expect(FocusManager.instance.primaryFocus, _cardFor(tester, 'B').focusNode);
+  });
 }
+
+MediaItem _photoLibraryItem(String id, MediaKind kind) => testMediaItem(
+  id: id,
+  backend: MediaBackend.jellyfin,
+  kind: kind,
+  title: id.toUpperCase(),
+  serverId: 'server-a',
+  serverName: 'Photos',
+);
 
 FocusableMediaCard _cardFor(WidgetTester tester, String title) =>
     tester.widget<FocusableMediaCard>(find.ancestor(of: find.text(title), matching: find.byType(FocusableMediaCard)));
@@ -755,6 +820,10 @@ class _BrowseClient implements MediaServerClient {
   Future<LibraryFilterResult> fetchLibraryFiltersWithValues(String libraryId, {MediaKind? libraryKind}) async {
     return LibraryFilterResult.empty;
   }
+
+  /// No URL: cards and the photo viewer stay off the network.
+  @override
+  String thumbnailUrl(String? path, {int? width, int? height, bool cover = true}) => '';
 
   @override
   Future<LibraryPage<MediaItem>> fetchLibraryPagedContent(

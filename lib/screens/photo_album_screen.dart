@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 import '../focus/focusable_action_bar.dart';
+import '../focus/input_mode_tracker.dart';
 import '../i18n/strings.g.dart';
 import '../media/library_query.dart';
 import '../media/media_item.dart';
+import '../media/media_kind.dart';
 import '../mixins/grid_focus_node_mixin.dart';
 import '../mixins/paginated_item_loader.dart';
 import '../mixins/standard_paginated_view.dart';
 import '../utils/app_logger.dart';
 import '../utils/error_message_utils.dart';
+import '../utils/media_navigation_helper.dart';
 import '../utils/media_server_http_client.dart';
 import '../widgets/desktop_app_bar.dart';
 import 'base_media_list_detail_screen.dart';
 import 'focusable_detail_screen_mixin.dart';
+import 'photo_sequence_viewer.dart';
 
 /// Grid of what a photo album holds: photos, clips and nested albums, each of
 /// which opens the way its own card does.
@@ -72,6 +76,57 @@ class _PhotoAlbumScreenState extends BaseMediaListDetailScreen<PhotoAlbumScreen>
   @override
   List<FocusableAction> getAppBarActions() => const [];
 
+  /// Photos open in a viewer that moves through the album's photos. Everything
+  /// else opens the way its card does.
+  Future<void> _openItem(int index) async {
+    final item = loadedItems[index];
+    if (item == null) return;
+    if (item.kind != MediaKind.photo) {
+      await navigateToMediaItem(context, item, onRefresh: updateItem);
+      return;
+    }
+    final sequence = PhotoSequence(
+      index: index,
+      photo: item,
+      length: () => totalSize,
+      itemAt: (i) => loadedItems[i],
+      loadItemAt: (i) => loadItemAt(i, pageSize: _pageSize),
+    );
+    await openPhotoSequence(context, sequence);
+    if (mounted && sequence.index != index) _revealItem(sequence.index);
+  }
+
+  /// Focuses the card at [index], scrolling the grid to it first when it is
+  /// out of view. Waits for the route's own focus restore, which goes back to
+  /// the card that opened the viewer.
+  void _revealItem(int index) {
+    final node = focusNodeForIndex(index, firstItemFocusNode, prefix: 'detail_grid_item');
+    bool cardMounted() => node.context?.mounted ?? false;
+    void reveal() {
+      if (!mounted || !cardMounted()) return;
+      node.requestFocus();
+      // Focus scrolls the card into view only in keyboard mode.
+      if (!InputModeTracker.isKeyboardMode(context, listen: false)) {
+        Scrollable.ensureVisible(node.context!, alignment: 0.5);
+      }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (cardMounted()) return reveal();
+        // Land near the card so the grid builds it, then place it exactly.
+        if (scrollController.hasClients && totalSize > 0) {
+          final position = scrollController.position;
+          final extent = position.maxScrollExtent + position.viewportDimension;
+          final estimate = extent * index / totalSize - position.viewportDimension / 2;
+          position.jumpTo(estimate.clamp(position.minScrollExtent, position.maxScrollExtent));
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) => reveal());
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return buildDetailScaffold(
@@ -88,6 +143,7 @@ class _PhotoAlbumScreenState extends BaseMediaListDetailScreen<PhotoAlbumScreen>
             totalItems: totalSize,
             itemAt: (index) => loadedItems[index],
             onRefresh: updateItem,
+            onItemTap: _openItem,
             onSkeletonVisible: (index) => ensureIndexLoaded(index, pageSize: _pageSize),
           ),
       ],

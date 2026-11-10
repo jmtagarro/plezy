@@ -807,7 +807,9 @@
     "shufflePlay": "Véletlenszerű lejátszás",
     "playTrailer": "Előzetes lejátszása",
     "markAsWatched": "Megjelölés megtekintettként",
-    "markAsUnwatched": "Megjelölés nem megtekintettként"
+    "markAsUnwatched": "Megjelölés nem megtekintettként",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "${n}. hangsáv"

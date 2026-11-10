@@ -807,7 +807,9 @@
     "shufflePlay": "Reproducción aleatoria",
     "playTrailer": "Reproducir tráiler",
     "markAsWatched": "Marcar como visto",
-    "markAsUnwatched": "Marcar como no visto"
+    "markAsUnwatched": "Marcar como no visto",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "Pista de audio ${n}"

@@ -15,7 +15,7 @@ import '../screens/collection_detail_screen.dart';
 import '../screens/main_screen.dart';
 import '../screens/media_detail_screen.dart';
 import '../screens/photo_album_screen.dart';
-import '../screens/photo_viewer_screen.dart';
+import '../screens/photo_sequence_viewer.dart';
 import '../screens/playlist/playlist_detail_screen.dart';
 import '../services/settings_service.dart';
 import '../utils/global_key_utils.dart';
@@ -286,7 +286,8 @@ Future<MediaNavigationResult> navigateToMediaItem(
       return MediaNavigationResult.navigated;
 
     case MediaKind.photo:
-      await Navigator.push<void>(context, MaterialPageRoute(builder: (context) => PhotoViewerScreen(photo: mi)));
+      // Grids that know their order open a sequence themselves.
+      await openPhotoSequence(context, PhotoSequence.single(mi));
       return MediaNavigationResult.navigated;
 
     case MediaKind.clip:

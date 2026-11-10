@@ -804,7 +804,9 @@
     "shufflePlay": "무작위 재생",
     "playTrailer": "예고편 재생",
     "markAsWatched": "시청 완료로 표시",
-    "markAsUnwatched": "미시청으로 표시"
+    "markAsUnwatched": "미시청으로 표시",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "오디오 트랙 ${n}"

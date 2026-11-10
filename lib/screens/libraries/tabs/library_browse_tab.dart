@@ -67,6 +67,7 @@ import '../../../utils/watch_state_notifier.dart';
 import '../../../utils/platform_detector.dart';
 import '../../../i18n/strings.g.dart';
 import '../../main_screen.dart';
+import '../../photo_sequence_viewer.dart';
 import 'base_library_tab.dart';
 
 /// Browse tab for library screen
@@ -2302,7 +2303,52 @@ class _LibraryBrowseTabState extends BaseLibraryTabState<MediaItem, LibraryBrows
       onFocusChange: (hasFocus) => trackGridItemFocus(index, hasFocus),
       onListRefresh: _loadItems,
       fullBleedImage: fullBleedImage,
+      // Photos move through the library's photos, in the grid's order.
+      onTap: item.kind == MediaKind.photo ? () => _openPhoto(index) : null,
     );
+  }
+
+  Future<void> _openPhoto(int index) async {
+    final photo = loadedItems[index];
+    if (photo == null) return;
+    final sequence = PhotoSequence(
+      index: index,
+      photo: photo,
+      length: () => totalSize,
+      itemAt: (i) => loadedItems[i],
+      loadItemAt: (i) => loadItemAt(i, pageSize: _activeFetchSize),
+    );
+    await openPhotoSequence(context, sequence);
+    if (mounted && sequence.index != index) _revealPhoto(sequence.index);
+  }
+
+  /// Focuses the card of the photo the viewer closed on, scrolling the grid to
+  /// it first when it is out of view. Waits for the route's own focus restore,
+  /// which goes back to the card that opened the viewer.
+  void _revealPhoto(int index) {
+    final node = _cardFocusNode(index);
+    bool cardMounted() => node.context?.mounted ?? false;
+    void reveal() {
+      if (!mounted || !cardMounted()) return;
+      node.requestFocus();
+      // Focus scrolls the card into view only in keyboard mode.
+      if (!InputModeTracker.isKeyboardMode(context, listen: false)) {
+        Scrollable.ensureVisible(node.context!, alignment: 0.5);
+      }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (cardMounted()) return reveal();
+        final pos = _innerPosition;
+        if (pos != null && _scrollMetrics.isUsable && pos.maxScrollExtent.isFinite) {
+          final offset = _scrollMetrics.scrollOffsetForItemIndex(index, contentStartOffset: _contentStartScrollOffset);
+          pos.jumpTo(offset.clamp(pos.minScrollExtent, pos.maxScrollExtent));
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) => reveal());
+      });
+    });
   }
 
   FocusNode _cardFocusNode(int index) =>

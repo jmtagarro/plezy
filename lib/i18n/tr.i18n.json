@@ -807,7 +807,9 @@
     "shufflePlay": "Karışık oynat",
     "playTrailer": "Fragmanı oynat",
     "markAsWatched": "İzlendi olarak işaretle",
-    "markAsUnwatched": "İzlenmedi olarak işaretle"
+    "markAsUnwatched": "İzlenmedi olarak işaretle",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "Ses Parçası ${n}"

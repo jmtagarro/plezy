@@ -807,7 +807,9 @@
     "shufflePlay": "Lecture aléatoire",
     "playTrailer": "Lire la bande-annonce",
     "markAsWatched": "Marquer comme vu",
-    "markAsUnwatched": "Marquer comme non vu"
+    "markAsUnwatched": "Marquer comme non vu",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "Piste audio ${n}"

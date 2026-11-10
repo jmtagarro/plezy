@@ -807,7 +807,9 @@
     "shufflePlay": "Qarışıq oynat",
     "playTrailer": "Treyleri oynat",
     "markAsWatched": "Baxıldı olaraq işarələ",
-    "markAsUnwatched": "Baxılmadı olaraq işarələ"
+    "markAsUnwatched": "Baxılmadı olaraq işarələ",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "Səs zolağı ${n}"

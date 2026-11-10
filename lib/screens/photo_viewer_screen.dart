@@ -18,6 +18,7 @@ import '../utils/orientation_helper.dart';
 import '../utils/platform_detector.dart';
 import '../utils/provider_extensions.dart';
 import '../widgets/app_bar_back_button.dart';
+import 'photo_sequence_viewer.dart';
 
 /// Shows one photo full-screen, sized to the screen, with pinch and scroll zoom.
 class PhotoViewerScreen extends StatefulWidget {
@@ -27,6 +28,28 @@ class PhotoViewerScreen extends StatefulWidget {
 
   @override
   State<PhotoViewerScreen> createState() => _PhotoViewerScreenState();
+
+  /// Longest edge of the screen-sized image: the monitor's long edge in
+  /// physical pixels, capped. The window's own edge stands in when it is
+  /// larger, or when the platform reports no display size.
+  static int screenImageEdge(BuildContext context) {
+    final windowEdge = MediaQuery.sizeOf(context).longestSide * MediaQuery.devicePixelRatioOf(context);
+    double displayEdge = 0;
+    try {
+      displayEdge = View.of(context).display.size.longestSide;
+    } catch (_) {
+      // No display information on this platform.
+    }
+    return math.min(math.max(windowEdge, displayEdge).ceil(), _PhotoViewerScreenState._maxImageEdge);
+  }
+
+  /// The screen-sized image of [path], under the cache key the viewer shows it
+  /// with, or null when the server gives no URL for it.
+  static ({String url, ImageProvider image})? screenImage(MediaServerClient client, String? path, int edge) {
+    final url = client.thumbnailUrl(path, width: edge, height: edge, cover: false);
+    if (url.isEmpty) return null;
+    return (url: url, image: MediaImageHelper.serverArtworkProvider(imageUrl: url, memWidth: edge, memHeight: edge));
+  }
 }
 
 class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
@@ -38,6 +61,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
   /// Where focus starts, so that Enter on opening does not press Back.
   final FocusNode _photoFocusNode = FocusNode(debugLabel: 'photo_viewer_photo');
   final FocusNode _backFocusNode = FocusNode(debugLabel: 'photo_viewer_back');
+  final TransformationController _transformation = TransformationController();
 
   /// Fixed at open, sized to the monitor rather than the window, and a square,
   /// so turning the phone or resizing or maximising the window does not
@@ -45,9 +69,13 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
   int? _imageEdge;
   bool _immersive = false;
 
+  /// The sequence this photo belongs to, when the viewer shows one.
+  PhotoNavigation? _navigation;
+
   /// Images this viewer put in the artwork cache, by URL. Each one is the size
   /// of the screen, so their decoded bitmaps leave the memory cache when the
-  /// viewer closes. Their files stay in the disk cache, so reopening the photo
+  /// viewer closes, unless the sequence around it still shows them next to the
+  /// current photo. Their files stay in the disk cache, so reopening the photo
   /// does not download it again.
   final Map<String, ImageProvider> _screenImages = {};
 
@@ -62,7 +90,8 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _imageEdge ??= math.min(_screenEdge(), _maxImageEdge);
+    _imageEdge ??= PhotoViewerScreen.screenImageEdge(context);
+    _navigation = PhotoNavigation.maybeOf(context);
     if (!_immersive && PlatformDetector.isMobile(context)) {
       _immersive = true;
       ImmersiveModeGuard.acquire(this);
@@ -72,35 +101,25 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
 
   @override
   void dispose() {
-    if (_immersive) {
-      // Before the overlays are shown: the re-show callback that follows must
-      // find no owner, or it would hide them again.
-      ImmersiveModeGuard.release(this);
+    // Released before the overlays are shown: the re-show callback that
+    // follows must find no owner, or it would hide them again. The viewer of
+    // the next photo in a sequence takes over before this one is disposed, and
+    // keeps the bars hidden.
+    if (_immersive && ImmersiveModeGuard.release(this)) {
       unawaited(
         OrientationHelper.restoreSystemUI().catchError((Object e) {
           appLogger.w('Failed to restore system UI', error: e);
         }),
       );
     }
-    for (final image in _screenImages.values) {
-      unawaited(image.evict());
+    for (final MapEntry(key: url, value: image) in _screenImages.entries) {
+      // The sequence keeps the photos next to the one it shows.
+      if (_navigation?.keepsImage(url) != true) unawaited(image.evict());
     }
+    _transformation.dispose();
     _photoFocusNode.dispose();
     _backFocusNode.dispose();
     super.dispose();
-  }
-
-  /// Longest edge of the monitor in physical pixels. The window's own edge
-  /// stands in when it is larger, or when the platform reports no display size.
-  int _screenEdge() {
-    final windowEdge = MediaQuery.sizeOf(context).longestSide * MediaQuery.devicePixelRatioOf(context);
-    double displayEdge = 0;
-    try {
-      displayEdge = View.of(context).display.size.longestSide;
-    } catch (_) {
-      // No display information on this platform.
-    }
-    return math.max(windowEdge, displayEdge).ceil();
   }
 
   /// The photo's own title, or its album's when it has none.
@@ -117,14 +136,20 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
     return date == null || date.isEmpty ? null : formatFullDate(date);
   }
 
-  /// Up and Down move between the photo and the back button. Left and Right do
-  /// nothing yet, and are consumed so they cannot wander off to the back button.
+  /// Up and Down move between the photo and the back button. Left and Right
+  /// move to the previous and next photo of the sequence, once per press, as
+  /// each photo is a new request to the server. They are consumed either way,
+  /// so they cannot wander off to the back button.
   KeyEventResult _handleKeyEvent(KeyEvent event) {
     final key = event.logicalKey;
     if (!key.isDpadDirection) return handleBackKeyNavigation(context, event);
     if (event.isActionable) {
       if (key == LogicalKeyboardKey.arrowUp) _backFocusNode.requestFocus();
       if (key == LogicalKeyboardKey.arrowDown) _photoFocusNode.requestFocus();
+    }
+    if (event is KeyDownEvent) {
+      if (key == LogicalKeyboardKey.arrowLeft) _navigation?.onPrevious?.call();
+      if (key == LogicalKeyboardKey.arrowRight) _navigation?.onNext?.call();
     }
     return KeyEventResult.handled;
   }
@@ -169,14 +194,10 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
   /// [path] drawn to fit the screen, or whatever [onFailed] builds when it
   /// cannot be loaded.
   Widget _buildImage(MediaServerClient client, String? path, {required Widget Function() onFailed}) {
-    final edge = _imageEdge!;
-    final url = client.thumbnailUrl(path, width: edge, height: edge, cover: false);
-    if (url.isEmpty) return onFailed();
+    final screenImage = PhotoViewerScreen.screenImage(client, path, _imageEdge!);
+    if (screenImage == null) return onFailed();
     return Image(
-      image: _screenImages.putIfAbsent(
-        url,
-        () => MediaImageHelper.serverArtworkProvider(imageUrl: url, memWidth: edge, memHeight: edge),
-      ),
+      image: _screenImages.putIfAbsent(screenImage.url, () => screenImage.image),
       fit: BoxFit.contain,
       semanticLabel: _title,
       loadingBuilder: (context, child, progress) =>
@@ -213,9 +234,19 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                 onKeyEvent: (_, event) =>
                     event.logicalKey.isSelectKey ? KeyEventResult.handled : KeyEventResult.ignored,
                 child: InteractiveViewer(
+                  transformationController: _transformation,
                   maxScale: _maxZoom,
                   child: SizedBox.expand(child: _buildPhoto()),
                 ),
+              ),
+            ),
+            // Above the photo but never in its gesture arena, so pinches and
+            // pans reach the photo untouched.
+            Positioned.fill(
+              child: PhotoSwipeDetector(
+                canSwipe: () => _transformation.value.getMaxScaleOnAxis() <= 1,
+                onPrevious: () => _navigation?.onPrevious?.call(),
+                onNext: () => _navigation?.onNext?.call(),
               ),
             ),
             const Positioned(

@@ -807,7 +807,9 @@
     "shufflePlay": "Араластырып ойнату",
     "playTrailer": "Трейлерді ойнату",
     "markAsWatched": "Көрілді деп белгілеу",
-    "markAsUnwatched": "Көрілмеді деп белгілеу"
+    "markAsUnwatched": "Көрілмеді деп белгілеу",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "Аудиожол ${n}"

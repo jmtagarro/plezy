@@ -807,7 +807,9 @@
     "shufflePlay": "Shuffle play",
     "playTrailer": "Play trailer",
     "markAsWatched": "Mark as watched",
-    "markAsUnwatched": "Mark as unwatched"
+    "markAsUnwatched": "Mark as unwatched",
+    "previousPhoto": "Previous photo",
+    "nextPhoto": "Next photo"
   },
   "audioTracks": {
     "track": "Audio Track ${n}"

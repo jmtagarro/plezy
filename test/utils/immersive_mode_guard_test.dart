@@ -77,6 +77,17 @@ void main() {
     expect(immersiveRequests(), hasLength(1));
   });
 
+  test('release reports whether the caller still owned immersive mode', () {
+    final predecessor = Object();
+    final successor = Object();
+    ImmersiveModeGuard.acquire(predecessor);
+    ImmersiveModeGuard.acquire(successor);
+
+    expect(ImmersiveModeGuard.release(predecessor), isFalse);
+    expect(ImmersiveModeGuard.release(successor), isTrue);
+    expect(ImmersiveModeGuard.release(successor), isFalse);
+  });
+
   test('registers the native listener once across owners', () async {
     ImmersiveModeGuard.acquire(Object());
     ImmersiveModeGuard.acquire(Object());

@@ -813,7 +813,9 @@
     "shufflePlay": "Odtwarzanie losowe",
     "playTrailer": "Odtwórz zwiastun",
     "markAsWatched": "Oznacz jako obejrzane",
-    "markAsUnwatched": "Oznacz jako nieobejrzane"
+    "markAsUnwatched": "Oznacz jako nieobejrzane",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "Ścieżka audio ${n}"

@@ -804,7 +804,9 @@
     "shufflePlay": "隨機播放",
     "playTrailer": "播放預告片",
     "markAsWatched": "標記為已觀看",
-    "markAsUnwatched": "標記為未觀看"
+    "markAsUnwatched": "標記為未觀看",
+    "previousPhoto": "",
+    "nextPhoto": ""
   },
   "audioTracks": {
     "track": "音軌 ${n}"

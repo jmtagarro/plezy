@@ -8,6 +8,7 @@ import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/screens/media_detail_screen.dart';
 import 'package:plezy/screens/photo_album_screen.dart';
+import 'package:plezy/screens/photo_sequence_viewer.dart';
 import 'package:plezy/screens/photo_viewer_screen.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/theme/mono_theme.dart';
@@ -52,8 +53,11 @@ void main() {
     testWidgets('a photo opens in the viewer, not a detail page', (tester) async {
       await open(tester, testMediaItem(kind: MediaKind.photo, title: 'Photo', serverId: 'server-1'));
 
+      expect(find.byType(PhotoSequenceViewer), findsOneWidget);
       expect(find.byType(PhotoViewerScreen), findsOneWidget);
       expect(find.byType(MediaDetailScreen), findsNothing);
+      // Opened on its own, with nothing to move to.
+      expect(find.byTooltip(t.tooltips.nextPhoto), findsNothing);
     });
   });
 
