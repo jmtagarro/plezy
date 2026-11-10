@@ -88,6 +88,52 @@ void main() {
     expect(ImmersiveModeGuard.release(successor), isFalse);
   });
 
+  test('a screen opened over another owns immersive mode, then hands it back', () async {
+    final viewer = Object();
+    final player = Object();
+    ImmersiveModeGuard.acquire(viewer);
+    ImmersiveModeGuard.acquire(player);
+
+    expect(ImmersiveModeGuard.release(player), isTrue);
+    expect(ImmersiveModeGuard.isOwned, isTrue);
+    await systemShowsOverlays();
+    expect(immersiveRequests(), hasLength(1), reason: 'the viewer below keeps the bars hidden');
+
+    expect(ImmersiveModeGuard.release(viewer), isTrue);
+    expect(ImmersiveModeGuard.isOwned, isFalse);
+    await systemShowsOverlays();
+    expect(immersiveRequests(), hasLength(1));
+  });
+
+  for (final viewerFirst in [true, false]) {
+    test('torn down together, ${viewerFirst ? 'viewer' : 'player'} first, the two leave no owner and one current owner'
+        ' releases last', () {
+      final viewer = Object();
+      final player = Object();
+      ImmersiveModeGuard.acquire(viewer);
+      ImmersiveModeGuard.acquire(player);
+
+      final first = viewerFirst ? viewer : player;
+      final second = viewerFirst ? player : viewer;
+      final firstWasCurrent = ImmersiveModeGuard.release(first);
+      final restoreAfterFirst = firstWasCurrent && !ImmersiveModeGuard.isOwned;
+      final secondWasCurrent = ImmersiveModeGuard.release(second);
+      final restoreAfterSecond = secondWasCurrent && !ImmersiveModeGuard.isOwned;
+
+      expect([restoreAfterFirst, restoreAfterSecond], [false, true]);
+      expect(ImmersiveModeGuard.isOwned, isFalse);
+    });
+  }
+
+  test('acquiring again does not stack the same owner twice', () {
+    final owner = Object();
+    ImmersiveModeGuard.acquire(owner);
+    ImmersiveModeGuard.acquire(owner);
+
+    expect(ImmersiveModeGuard.release(owner), isTrue);
+    expect(ImmersiveModeGuard.isOwned, isFalse);
+  });
+
   test('registers the native listener once across owners', () async {
     ImmersiveModeGuard.acquire(Object());
     ImmersiveModeGuard.acquire(Object());

@@ -32,6 +32,7 @@ import 'package:plezy/services/playback_coordinator.dart';
 import 'package:plezy/services/plex_client.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/services/sleep_timer_service.dart';
+import 'package:plezy/utils/immersive_mode_guard.dart';
 import 'package:plezy/utils/platform_detector.dart';
 import 'package:plezy/utils/active_client_scope.dart';
 import 'package:plezy/utils/external_ids.dart';
@@ -440,6 +441,69 @@ void main() {
         debugDefaultTargetPlatformOverride = null;
       }
     });
+  }
+
+  for (final immersiveBelow in [false, true]) {
+    testWidgets(
+      immersiveBelow
+          ? 'a player over an immersive screen keeps the system bars hidden on exit, and still restores orientation'
+          : 'a player opened on its own shows the system bars again on exit',
+      (tester) async {
+        final platformCalls = <MethodCall>[];
+        final below = Object();
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() {
+          debugDefaultTargetPlatformOverride = null;
+          ImmersiveModeGuard.resetForTesting();
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          );
+        });
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async {
+            platformCalls.add(call);
+            return null;
+          },
+        );
+        // The photo viewer a clip was played from.
+        if (immersiveBelow) ImmersiveModeGuard.acquire(below);
+        try {
+          await withMockPlayerChannels(
+            methodChannelName: 'com.plezy/mpv_player',
+            eventChannelName: 'com.plezy/mpv_player/events',
+            testBody: () async {
+              final screen = await _pushExitScreen(tester, db: db, client: _ReloadClient(), fakePlayer: _ExitPlayer());
+              platformCalls.clear();
+
+              await tester.binding.handlePopRoute();
+              await tester.pump();
+              await tester.pump(const Duration(seconds: 1));
+              await tester.pump();
+              expect(screen.key.currentState, isNull);
+
+              final modes = [
+                for (final call in platformCalls)
+                  if (call.method == 'SystemChrome.setEnabledSystemUIMode') call.arguments,
+              ];
+              expect(platformCalls.map((call) => call.method), contains('SystemChrome.setPreferredOrientations'));
+              if (immersiveBelow) {
+                expect(modes, isNot(contains('SystemUiMode.edgeToEdge')));
+                expect(ImmersiveModeGuard.isOwned, isTrue, reason: 'the screen below still owns immersive mode');
+              } else {
+                expect(modes, contains('SystemUiMode.edgeToEdge'));
+                expect(ImmersiveModeGuard.isOwned, isFalse);
+              }
+              await tester.pumpWidget(const SizedBox.shrink());
+              await tester.pump();
+            },
+          );
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      },
+    );
   }
 
   for (final target in ['same room', 'download', 'live', 'superseded before build']) {

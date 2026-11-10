@@ -443,20 +443,12 @@ void main() {
     expect(harness.filterMetadataRequests.single.queryParameters['X-Plex-Container-Start'], '0');
   });
 
-  testWidgets('a photo at the library root moves through the library\'s photos, and closing focuses the last one', (
-    tester,
-  ) async {
+  /// Shows [items] at the root of a library of [kind].
+  /// Video libraries open in folder view where they can, so the grid shows
+  /// only without it.
+  Future<void> pumpLibraryRoot(WidgetTester tester, List<MediaItem> items, {MediaKind kind = MediaKind.photo}) async {
     final client = _BrowseClient('server-a', 'Photos');
-    client.pageResponses.add(
-      () async => LibraryPage<MediaItem>(
-        items: [
-          _photoLibraryItem('a', MediaKind.photo),
-          _photoLibraryItem('trip', MediaKind.photoAlbum),
-          _photoLibraryItem('b', MediaKind.photo),
-        ],
-        totalCount: 3,
-      ),
-    );
+    client.pageResponses.add(() async => LibraryPage<MediaItem>(items: items, totalCount: items.length));
     final manager = MultiServerManager()..debugRegisterClientForTesting(client);
     final provider = testMultiServerProvider(manager);
     addTearDown(() {
@@ -467,16 +459,33 @@ void main() {
       id: 'photos',
       backend: MediaBackend.jellyfin,
       title: 'Photos',
-      kind: MediaKind.photo,
+      kind: kind,
       serverId: client.serverId,
     );
     await pumpLibraryTab(
       tester,
       provider: provider,
-      tab: LibraryBrowseTab(library: library, canGroupByFolders: true, isActive: true, onBack: () {}),
+      tab: LibraryBrowseTab(
+        library: library,
+        canGroupByFolders: kind == MediaKind.photo,
+        isActive: true,
+        onBack: () {},
+      ),
     );
     await pumpRequestFrames(tester);
+  }
 
+  testWidgets('a photo at the library root moves through the library\'s photos and clips, and closing focuses the '
+      'last one', (tester) async {
+    await pumpLibraryRoot(tester, [
+      _photoLibraryItem('a', MediaKind.photo),
+      _photoLibraryItem('trip', MediaKind.photoAlbum),
+      _photoLibraryItem('v', MediaKind.clip),
+      _photoLibraryItem('b', MediaKind.photo),
+    ]);
+
+    // A clip opens the viewer too.
+    expect(_cardFor(tester, 'V').onTap, isNotNull);
     // Albums keep their card's own tap.
     expect(_cardFor(tester, 'TRIP').onTap, isNull);
 
@@ -489,12 +498,25 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pumpAndSettle();
+    expect(tester.widget<PhotoViewerScreen>(find.byType(PhotoViewerScreen)).photo.id, 'v');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
     expect(tester.widget<PhotoViewerScreen>(find.byType(PhotoViewerScreen)).photo.id, 'b');
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.byType(PhotoSequenceViewer), findsNothing);
     expect(FocusManager.instance.primaryFocus, _cardFor(tester, 'B').focusNode);
+  });
+
+  testWidgets('outside a photo library, a clip keeps playing straight from its card', (tester) async {
+    await pumpLibraryRoot(tester, [
+      _photoLibraryItem('v', MediaKind.clip),
+      _photoLibraryItem('a', MediaKind.photo),
+    ], kind: MediaKind.clip);
+
+    expect(_cardFor(tester, 'V').onTap, isNull);
+    expect(_cardFor(tester, 'A').onTap, isNotNull);
   });
 }
 

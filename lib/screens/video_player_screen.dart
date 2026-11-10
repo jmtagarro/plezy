@@ -2445,9 +2445,12 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
     // Independent requests: a missing system-UI reply must not prevent the
     // orientation request.
     return _systemUiRestoreOperation = Future.wait<void>([
-      OrientationHelper.restoreSystemUI().catchError((Object e) {
-        appLogger.w('Failed to restore system UI', error: e);
-      }),
+      // A screen below that is immersive too, such as the photo viewer, keeps
+      // the system UI hidden.
+      if (!ImmersiveModeGuard.isOwned)
+        OrientationHelper.restoreSystemUI().catchError((Object e) {
+          appLogger.w('Failed to restore system UI', error: e);
+        }),
       OrientationHelper.restoreDefaultOrientations().catchError((Object e) {
         appLogger.w('Failed to restore orientation', error: e);
       }),

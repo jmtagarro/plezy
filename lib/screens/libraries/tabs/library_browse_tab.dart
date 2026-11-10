@@ -2303,8 +2303,11 @@ class _LibraryBrowseTabState extends BaseLibraryTabState<MediaItem, LibraryBrows
       onFocusChange: (hasFocus) => trackGridItemFocus(index, hasFocus),
       onListRefresh: _loadItems,
       fullBleedImage: fullBleedImage,
-      // Photos move through the library's photos, in the grid's order.
-      onTap: item.kind == MediaKind.photo ? () => _openPhoto(index) : null,
+      // Photos move through the library's photos and clips, in the grid's
+      // order. Clips open there only in a photo library; elsewhere they play.
+      onTap: item.kind == MediaKind.photo || (item.kind == MediaKind.clip && widget.library.kind == MediaKind.photo)
+          ? () => _openPhoto(index)
+          : null,
     );
   }
 

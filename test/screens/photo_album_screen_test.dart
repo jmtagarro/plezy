@@ -152,7 +152,7 @@ void main() {
       _item('c', MediaKind.photo, 'C'),
     ];
 
-    testWidgets('follow the grid, skipping clips and albums', (tester) async {
+    testWidgets('follow the grid through photos and clips, skipping albums', (tester) async {
       await tester.pumpWidget(
         await wrap(
           PhotoAlbumScreen(album: _album),
@@ -168,11 +168,31 @@ void main() {
       expect(shownPhoto(tester), 'a');
 
       await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(shownPhoto(tester), 'clip');
+      await press(tester, LogicalKeyboardKey.arrowRight);
       expect(shownPhoto(tester), 'b');
       await press(tester, LogicalKeyboardKey.arrowRight);
       expect(shownPhoto(tester), 'c');
       await press(tester, LogicalKeyboardKey.arrowRight);
       expect(shownPhoto(tester), 'c');
+    });
+
+    testWidgets('a clip card opens the viewer on the clip', (tester) async {
+      await tester.pumpWidget(
+        await wrap(
+          PhotoAlbumScreen(album: _album),
+          clients: [
+            _AlbumClient({'album': children}),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Waves'));
+      await tester.pumpAndSettle();
+
+      expect(shownPhoto(tester), 'clip');
+      expect(find.byTooltip(t.common.play), findsOneWidget);
     });
 
     testWidgets('a nested album still opens as its card does, not in the viewer', (tester) async {
@@ -207,6 +227,7 @@ void main() {
       await openWithKeyboard(tester, 'A');
       await press(tester, LogicalKeyboardKey.arrowRight);
       await press(tester, LogicalKeyboardKey.arrowRight);
+      await press(tester, LogicalKeyboardKey.arrowRight);
       await press(tester, LogicalKeyboardKey.escape);
 
       expect(find.byType(PhotoSequenceViewer), findsNothing);
@@ -214,14 +235,14 @@ void main() {
     });
 
     group('in a long album', () {
-      // A photo first, then clips, with the second photo on the second page.
+      // A photo first, then albums, with the second photo on the second page.
       final long = [
         for (var i = 0; i < 300; i++)
           i == 0
               ? _item('a', MediaKind.photo, 'A')
               : i == 251
               ? _item('b', MediaKind.photo, 'B')
-              : _item('clip$i', MediaKind.clip, 'Clip $i'),
+              : _item('album$i', MediaKind.photoAlbum, 'Album $i'),
       ];
 
       void expectOnScreen(WidgetTester tester, String title) {

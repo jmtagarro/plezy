@@ -26,8 +26,10 @@ extension MediaItemTypes on MediaItem {
 
   /// Server path of the image to show full-screen for a photo. On Plex that is
   /// the photo's own file. MediaBrowser servers serve photos through their
-  /// image endpoint, and their part paths are video stream routes.
+  /// image endpoint, and their part paths are video stream routes. A clip shows
+  /// its thumbnail, as its part is the video.
   String? get photoImagePath => switch (this) {
+    _ when kind == MediaKind.clip => thumbPath,
     PlexMediaItem(:final mediaVersions) => mediaVersions?.firstOrNull?.parts.firstOrNull?.streamPath ?? thumbPath,
     JellyfinMediaItem() => thumbPath,
   };

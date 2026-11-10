@@ -1,11 +1,16 @@
 import 'dart:io';
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:plezy/focus/focus_theme.dart';
+import 'package:plezy/focus/focusable_button.dart';
 import 'package:plezy/focus/input_mode_tracker.dart';
+import 'package:plezy/focus/key_event_utils.dart';
 import 'package:plezy/i18n/strings.g.dart';
 import 'package:plezy/media/ids.dart';
 import 'package:plezy/media/media_backend.dart';
@@ -19,6 +24,7 @@ import 'package:plezy/screens/photo_viewer_screen.dart';
 import 'package:plezy/services/device_performance.dart';
 import 'package:plezy/theme/mono_theme.dart';
 import 'package:plezy/utils/immersive_mode_guard.dart';
+import 'package:plezy/utils/orientation_helper.dart';
 import 'package:plezy/utils/platform_detector.dart';
 import 'package:provider/provider.dart';
 
@@ -81,13 +87,30 @@ void main() {
   group('PhotoSequence', () {
     final items = [
       _photo('a'),
-      _item('clip', MediaKind.clip),
-      _item('album', MediaKind.photoAlbum),
+      _item('album1', MediaKind.photoAlbum),
+      _item('album2', MediaKind.photoAlbum),
       _photo('b'),
       _photo('c'),
     ];
 
-    test('skips clips and albums both ways', () async {
+    test('keeps photos and clips in grid order, skipping albums both ways', () async {
+      final mixed = [
+        _photo('a'),
+        _item('x', MediaKind.clip),
+        _item('album', MediaKind.photoAlbum),
+        _item('y', MediaKind.clip),
+        _photo('b'),
+      ];
+      final sequence = _sequenceOf(mixed, 0);
+
+      expect(await sequence.neighbour(0, 1), (index: 1, photo: mixed[1]));
+      expect(await sequence.neighbour(1, 1), (index: 3, photo: mixed[3]));
+      expect(await sequence.neighbour(3, 1), (index: 4, photo: mixed[4]));
+      expect(await sequence.neighbour(4, -1), (index: 3, photo: mixed[3]));
+      expect(await sequence.neighbour(3, -1), (index: 1, photo: mixed[1]));
+    });
+
+    test('skips albums both ways', () async {
       final sequence = _sequenceOf(items, 0);
 
       expect(await sequence.neighbour(0, 1), (index: 3, photo: items[3]));
@@ -139,14 +162,26 @@ void main() {
 
   /// Opens the viewer on [sequence] from a focused button, so that closing it
   /// has somewhere to go.
-  Future<void> open(WidgetTester tester, PhotoSequence sequence, {MultiServerProvider? provider}) async {
+  Future<void> open(
+    WidgetTester tester,
+    PhotoSequence sequence, {
+    MultiServerProvider? provider,
+    Future<void> Function(BuildContext context, MediaItem clip)? playClip,
+  }) async {
     await tester.pumpWidget(
       wrap(
         Builder(
           builder: (context) => Scaffold(
             body: TextButton(
               autofocus: true,
-              onPressed: () => openPhotoSequence(context, sequence),
+              onPressed: () => playClip == null
+                  ? openPhotoSequence(context, sequence)
+                  : Navigator.push<void>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PhotoSequenceViewer(sequence: sequence, playClip: playClip),
+                      ),
+                    ),
               child: const Text('open'),
             ),
           ),
@@ -167,7 +202,7 @@ void main() {
 
   final album = [
     _photo('a'),
-    _item('clip', MediaKind.clip),
+    _item('album1', MediaKind.photoAlbum),
     _photo('b'),
     _item('album', MediaKind.photoAlbum),
     _photo('c'),
@@ -176,10 +211,10 @@ void main() {
   group('keys', () {
     void runScenarios() {
       for (final backend in MediaBackend.values) {
-        testWidgets('Right and Left move between the photos, skipping the rest (${backend.name})', (tester) async {
+        testWidgets('Right and Left move between the photos, skipping albums (${backend.name})', (tester) async {
           final items = [
             _photo('a', backend: backend),
-            _item('clip', MediaKind.clip, backend: backend),
+            _item('album', MediaKind.photoAlbum, backend: backend),
             _photo('b', backend: backend),
           ];
           final sequence = _sequenceOf(items, 0);
@@ -488,6 +523,260 @@ void main() {
     expect(shownTitle(tester), 'a');
     expect(primaryFocus()?.debugLabel, 'photo_viewer_photo');
   });
+
+  group('clips', () {
+    MediaItem clip(String id, {MediaBackend backend = MediaBackend.plex}) =>
+        _item(id, MediaKind.clip, backend: backend).copyWith(durationMs: 65000, originallyAvailableAt: '2020-12-24');
+    final mixed = [_photo('a'), clip('x'), _item('album', MediaKind.photoAlbum), clip('y'), _photo('b')];
+    final played = <String>[];
+    setUp(played.clear);
+
+    /// Plays in [_StandInPlayer], which closes on Escape, or when [ends]
+    /// completes.
+    Future<void> Function(BuildContext, MediaItem) player({Future<void>? ends}) => (context, item) async {
+      played.add(item.id);
+      await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => _StandInPlayer(ends: ends)));
+    };
+
+    double scale(WidgetTester tester) => tester
+        .widget<Transform>(find.descendant(of: find.byType(InteractiveViewer), matching: find.byType(Transform)).first)
+        .transform
+        .getMaxScaleOnAxis();
+
+    testWidgets('a clip shows its title, date, duration and a play button, and does not zoom', (tester) async {
+      await open(tester, _sequenceOf(mixed, 0), playClip: player());
+
+      await press(tester, LogicalKeyboardKey.arrowRight);
+
+      expect(shownTitle(tester), 'x');
+      expect(find.text('x'), findsOneWidget);
+      expect(find.text('1:05'), findsOneWidget);
+      expect(find.byTooltip('Play'), findsOneWidget);
+      expect(primaryFocus()?.debugLabel, 'photo_viewer_play');
+
+      // Away from the play button in the middle.
+      final pointer = TestPointer(1, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(
+        pointer.hover(tester.getTopLeft(find.byType(InteractiveViewer)) + const Offset(40, 200)),
+      );
+      await tester.sendEventToBinding(pointer.scroll(const Offset(0, -500)));
+      await tester.pump();
+      expect(scale(tester), 1);
+    });
+
+    for (final (name, start) in <(String, Future<void> Function(WidgetTester))>[
+      ('Enter', (tester) => press(tester, LogicalKeyboardKey.enter)),
+      ('Select', (tester) => press(tester, LogicalKeyboardKey.select)),
+      (
+        'a tap',
+        (tester) async {
+          await tester.tap(find.byTooltip('Play'));
+          await tester.pumpAndSettle();
+        },
+      ),
+    ]) {
+      testWidgets('$name plays the clip once, and closing the player returns to it with focus on play', (tester) async {
+        final sequence = _sequenceOf(mixed, 1);
+        await open(tester, sequence, playClip: player());
+
+        await start(tester);
+        expect(played, ['x']);
+        expect(find.byType(_StandInPlayer), findsOneWidget);
+
+        await press(tester, LogicalKeyboardKey.escape);
+        expect(find.byType(_StandInPlayer), findsNothing);
+        expect(shownTitle(tester), 'x');
+        expect(primaryFocus()?.debugLabel, 'photo_viewer_play');
+        expect(played, ['x']);
+      });
+    }
+
+    testWidgets('a clip that plays to the end returns to its page, and Left and Right go on from there', (
+      tester,
+    ) async {
+      final ends = Completer<void>();
+      final sequence = _sequenceOf(mixed, 1);
+      await open(tester, sequence, playClip: player(ends: ends.future));
+
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(find.byType(_StandInPlayer), findsOneWidget);
+      ends.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(_StandInPlayer), findsNothing);
+      expect(shownTitle(tester), 'x');
+      expect(primaryFocus()?.debugLabel, 'photo_viewer_play');
+
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(shownTitle(tester), 'y');
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(shownTitle(tester), 'b');
+      expect(primaryFocus()?.debugLabel, 'photo_viewer_photo');
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      expect(shownTitle(tester), 'x');
+      expect(sequence.index, 1);
+    });
+
+    testWidgets('a player that fails to open leaves the clip page as it was', (tester) async {
+      await open(tester, _sequenceOf(mixed, 1), playClip: (_, _) async => throw StateError('no player'));
+
+      await press(tester, LogicalKeyboardKey.enter);
+
+      expect(tester.takeException(), isNull);
+      expect(shownTitle(tester), 'x');
+      expect(primaryFocus()?.debugLabel, 'photo_viewer_play');
+    });
+
+    group('on TV', () {
+      setUp(() async => TvDetectionService.getInstance(forceTv: true));
+      tearDown(TvDetectionService.debugReset);
+
+      testWidgets('play shows its focus, Enter plays, Up reaches Back and Down returns to play', (tester) async {
+        await open(tester, _sequenceOf(mixed, 0), playClip: player());
+        await press(tester, LogicalKeyboardKey.arrowRight);
+        expect(primaryFocus()?.debugLabel, 'photo_viewer_play');
+
+        final chrome = find.descendant(of: find.byType(FocusableButton), matching: find.byType(AnimatedContainer));
+        final focused = FocusTheme.focusDecoration(tester.element(chrome), isFocused: true, borderRadius: 100);
+        expect(tester.widget<AnimatedContainer>(chrome).decoration, focused);
+
+        await press(tester, LogicalKeyboardKey.arrowUp);
+        expect(primaryFocus()?.debugLabel, 'photo_viewer_back');
+        expect(tester.widget<AnimatedContainer>(chrome).decoration, isNot(focused));
+        await press(tester, LogicalKeyboardKey.arrowDown);
+        expect(primaryFocus()?.debugLabel, 'photo_viewer_play');
+
+        await press(tester, LogicalKeyboardKey.enter);
+        expect(played, ['x']);
+      });
+    });
+
+    group('system bars on a phone', () {
+      late List<Object?> modes;
+      setUp(() => modes = []);
+
+      void recordModes(WidgetTester tester) {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'SystemChrome.setEnabledSystemUIMode') modes.add(call.arguments);
+          return null;
+        });
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null),
+        );
+      }
+
+      int restores() => modes.where((mode) => mode == 'SystemUiMode.edgeToEdge').length;
+
+      testWidgets('stay hidden from the viewer to the player and back, and show once when the viewer closes', (
+        tester,
+      ) async {
+        recordModes(tester);
+        await open(tester, _sequenceOf(mixed, 1), playClip: player());
+        modes.clear();
+
+        await press(tester, LogicalKeyboardKey.enter);
+        await press(tester, LogicalKeyboardKey.escape);
+        expect(find.byType(_StandInPlayer), findsNothing);
+        expect(modes, everyElement('SystemUiMode.immersiveSticky'));
+        expect(ImmersiveModeGuard.isOwned, isTrue);
+
+        await press(tester, LogicalKeyboardKey.escape);
+        expect(find.byType(PhotoSequenceViewer), findsNothing);
+        expect(restores(), 1);
+        expect(ImmersiveModeGuard.isOwned, isFalse);
+      });
+
+      testWidgets('a clip that ends hands the bars back hidden too', (tester) async {
+        recordModes(tester);
+        final ends = Completer<void>();
+        await open(tester, _sequenceOf(mixed, 1), playClip: player(ends: ends.future));
+        modes.clear();
+
+        await press(tester, LogicalKeyboardKey.enter);
+        ends.complete();
+        await tester.pumpAndSettle();
+
+        expect(restores(), 0);
+        expect(ImmersiveModeGuard.isOwned, isTrue);
+      });
+
+      group('leave no owner behind', () {
+        testWidgets('when everything above the opener is popped while the player is open', (tester) async {
+          recordModes(tester);
+          await open(tester, _sequenceOf(mixed, 1), playClip: player());
+          await press(tester, LogicalKeyboardKey.enter);
+          modes.clear();
+
+          Navigator.of(tester.element(find.byType(_StandInPlayer))).popUntil((route) => route.isFirst);
+          await tester.pumpAndSettle();
+
+          expect(find.byType(PhotoSequenceViewer), findsNothing);
+          expect(restores(), 1);
+          expect(ImmersiveModeGuard.isOwned, isFalse);
+        });
+
+        testWidgets('when the viewer route is removed under the player, then the player closes', (tester) async {
+          recordModes(tester);
+          await open(tester, _sequenceOf(mixed, 1), playClip: player());
+          final viewerRoute = ModalRoute.of(tester.element(find.byType(PhotoSequenceViewer)))!;
+          await press(tester, LogicalKeyboardKey.enter);
+          modes.clear();
+
+          Navigator.of(tester.element(find.byType(_StandInPlayer))).removeRoute(viewerRoute);
+          await tester.pumpAndSettle();
+          expect(restores(), 0, reason: 'the player still owns immersive mode');
+
+          await press(tester, LogicalKeyboardKey.escape);
+          expect(find.byType(_StandInPlayer), findsNothing);
+          expect(restores(), 1);
+          expect(ImmersiveModeGuard.isOwned, isFalse);
+        });
+
+        testWidgets('when the whole app is torn down while the player is open', (tester) async {
+          recordModes(tester);
+          await open(tester, _sequenceOf(mixed, 1), playClip: player());
+          await press(tester, LogicalKeyboardKey.enter);
+          modes.clear();
+
+          await tester.pumpWidget(const SizedBox());
+          await tester.pump();
+
+          expect(restores(), 1);
+          expect(ImmersiveModeGuard.isOwned, isFalse);
+        });
+
+        testWidgets('when the player fails to open', (tester) async {
+          recordModes(tester);
+          await open(tester, _sequenceOf(mixed, 1), playClip: (_, _) async => throw StateError('no player'));
+          await press(tester, LogicalKeyboardKey.enter);
+          modes.clear();
+
+          await press(tester, LogicalKeyboardKey.escape);
+
+          expect(restores(), 1);
+          expect(ImmersiveModeGuard.isOwned, isFalse);
+        });
+
+        testWidgets('after moving between photos and clips and closing', (tester) async {
+          recordModes(tester);
+          await open(tester, _sequenceOf(mixed, 0), playClip: player());
+          for (var i = 0; i < 3; i++) {
+            await press(tester, LogicalKeyboardKey.arrowRight);
+          }
+          await press(tester, LogicalKeyboardKey.arrowLeft);
+          await press(tester, LogicalKeyboardKey.enter);
+          await press(tester, LogicalKeyboardKey.escape);
+          modes.clear();
+
+          await press(tester, LogicalKeyboardKey.escape);
+
+          expect(restores(), 1);
+          expect(ImmersiveModeGuard.isOwned, isFalse);
+        });
+      });
+    });
+  });
 }
 
 /// Answers image requests with a URL naming the path and size, and records
@@ -519,4 +808,45 @@ class _UrlClient implements MediaServerClient {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Takes immersive mode over from the viewer and hands it back the way
+/// VideoPlayerScreen does: it acquires the guard when it opens, and on close
+/// releases it and shows the system UI only when no screen below still owns it.
+class _StandInPlayer extends StatefulWidget {
+  const _StandInPlayer({this.ends});
+
+  /// Completes when the video plays to its end, which closes the player.
+  final Future<void>? ends;
+
+  @override
+  State<_StandInPlayer> createState() => _StandInPlayerState();
+}
+
+class _StandInPlayerState extends State<_StandInPlayer> {
+  @override
+  void initState() {
+    super.initState();
+    ImmersiveModeGuard.acquire(this);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    widget.ends?.then((_) {
+      if (mounted) Navigator.of(context).pop();
+    });
+  }
+
+  @override
+  void dispose() {
+    ImmersiveModeGuard.release(this);
+    if (!ImmersiveModeGuard.isOwned) OrientationHelper.restoreSystemUI();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Focus(
+    autofocus: true,
+    // Back on key up, as every screen does, so the key down does not also
+    // reach the viewer below.
+    onKeyEvent: (_, event) => handleBackKeyNavigation(context, event),
+    child: const Scaffold(body: Text('player')),
+  );
 }

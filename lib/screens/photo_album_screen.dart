@@ -4,7 +4,6 @@ import '../focus/input_mode_tracker.dart';
 import '../i18n/strings.g.dart';
 import '../media/library_query.dart';
 import '../media/media_item.dart';
-import '../media/media_kind.dart';
 import '../mixins/grid_focus_node_mixin.dart';
 import '../mixins/paginated_item_loader.dart';
 import '../mixins/standard_paginated_view.dart';
@@ -76,12 +75,12 @@ class _PhotoAlbumScreenState extends BaseMediaListDetailScreen<PhotoAlbumScreen>
   @override
   List<FocusableAction> getAppBarActions() => const [];
 
-  /// Photos open in a viewer that moves through the album's photos. Everything
-  /// else opens the way its card does.
+  /// Photos and clips open in a viewer that moves through them. Nested albums
+  /// open the way their cards do.
   Future<void> _openItem(int index) async {
     final item = loadedItems[index];
     if (item == null) return;
-    if (item.kind != MediaKind.photo) {
+    if (!PhotoSequence.shows(item)) {
       await navigateToMediaItem(context, item, onRefresh: updateItem);
       return;
     }

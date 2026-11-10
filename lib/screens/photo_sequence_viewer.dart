@@ -13,6 +13,7 @@ import '../services/device_performance.dart';
 import '../utils/app_logger.dart';
 import '../utils/platform_detector.dart';
 import '../utils/provider_extensions.dart';
+import '../utils/video_player_navigation.dart';
 import '../widgets/app_icon.dart';
 import 'photo_viewer_screen.dart';
 
@@ -20,7 +21,7 @@ import 'photo_viewer_screen.dart';
 typedef PhotoSequenceEntry = ({int index, MediaItem photo});
 
 /// The list a photo was opened from, in the order its grid shows it. The
-/// viewer moves through its photos and skips clips and albums in between.
+/// viewer moves through its photos and clips, and skips the albums in between.
 class PhotoSequence {
   PhotoSequence({
     required this.index,
@@ -41,11 +42,15 @@ class PhotoSequence {
   /// The photo shown.
   MediaItem photo;
 
+  /// Whether the viewer shows [item]: photos, and clips, which play from
+  /// their page.
+  static bool shows(MediaItem item) => item.kind == MediaKind.photo || item.kind == MediaKind.clip;
+
   final int Function() _length;
   final MediaItem? Function(int index) _itemAt;
   final Future<MediaItem?> Function(int index) _loadItemAt;
 
-  /// The nearest photo from [from] in the direction of [step] (-1 or 1),
+  /// The nearest photo or clip from [from] in the direction of [step] (-1 or 1),
   /// loading the list as it goes. Null at the end of the list, or when part of
   /// it cannot be loaded.
   Future<PhotoSequenceEntry?> neighbour(int from, int step) async {
@@ -55,7 +60,7 @@ class PhotoSequence {
         appLogger.d('Photo viewer: no item at $i, so the sequence ends there');
         return null;
       }
-      if (item.kind == MediaKind.photo) return (index: i, photo: item);
+      if (shows(item)) return (index: i, photo: item);
     }
     return null;
   }
@@ -73,8 +78,12 @@ class PhotoNavigation extends InheritedWidget {
     required this.onPrevious,
     required this.onNext,
     required this.keepsImage,
+    this.onPlay,
     required super.child,
   });
+
+  /// Plays a clip of the sequence, and completes once the player closes.
+  final Future<void> Function(MediaItem clip)? onPlay;
 
   /// Null at the start of the sequence.
   final VoidCallback? onPrevious;
@@ -91,7 +100,10 @@ class PhotoNavigation extends InheritedWidget {
 
   @override
   bool updateShouldNotify(PhotoNavigation oldWidget) =>
-      onPrevious != oldWidget.onPrevious || onNext != oldWidget.onNext || keepsImage != oldWidget.keepsImage;
+      onPrevious != oldWidget.onPrevious ||
+      onNext != oldWidget.onNext ||
+      keepsImage != oldWidget.keepsImage ||
+      onPlay != oldWidget.onPlay;
 }
 
 /// Shows the photos of a [PhotoSequence] one at a time, with one
@@ -100,7 +112,11 @@ class PhotoNavigation extends InheritedWidget {
 class PhotoSequenceViewer extends StatefulWidget {
   final PhotoSequence sequence;
 
-  const PhotoSequenceViewer({super.key, required this.sequence});
+  /// Replaces the player a clip opens in.
+  @visibleForTesting
+  final Future<void> Function(BuildContext context, MediaItem clip)? playClip;
+
+  const PhotoSequenceViewer({super.key, required this.sequence, this.playClip});
 
   @override
   State<PhotoSequenceViewer> createState() => _PhotoSequenceViewerState();
@@ -247,6 +263,18 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
 
   bool _keepsImage(String url) => _window.containsKey(url);
 
+  /// Plays [clip] in the player, and stays on its page for when the player
+  /// closes or the clip ends.
+  Future<void> _play(MediaItem clip) async {
+    try {
+      final playClip = widget.playClip;
+      if (playClip != null) return await playClip(context, clip);
+      await navigateToVideoPlayer(context, metadata: clip);
+    } catch (error, stackTrace) {
+      appLogger.w('Photo viewer: the clip did not play', error: error, stackTrace: stackTrace);
+    }
+  }
+
   void _goPrevious() => unawaited(_go(-1));
   void _goNext() => unawaited(_go(1));
 
@@ -280,6 +308,7 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
       onPrevious: _previous == null ? null : _goPrevious,
       onNext: _next == null ? null : _goNext,
       keepsImage: _keepsImage,
+      onPlay: _play,
       child: Stack(
         children: [
           Positioned.fill(

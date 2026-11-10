@@ -2,13 +2,16 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 import '../focus/dpad_navigator.dart';
+import '../focus/focusable_button.dart';
 import '../focus/key_event_utils.dart';
 import '../i18n/strings.g.dart';
 import '../media/ids.dart';
 import '../media/media_item.dart';
 import '../media/media_item_types.dart';
+import '../media/media_kind.dart';
 import '../media/media_server_client.dart';
 import '../utils/app_logger.dart';
 import '../utils/formatters.dart';
@@ -18,6 +21,7 @@ import '../utils/orientation_helper.dart';
 import '../utils/platform_detector.dart';
 import '../utils/provider_extensions.dart';
 import '../widgets/app_bar_back_button.dart';
+import '../widgets/app_icon.dart';
 import 'photo_sequence_viewer.dart';
 
 /// Shows one photo full-screen, sized to the screen, with pinch and scroll zoom.
@@ -72,6 +76,9 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
   /// The sequence this photo belongs to, when the viewer shows one.
   PhotoNavigation? _navigation;
 
+  /// The play button a clip shows instead of zoom, where focus starts on one.
+  final FocusNode _playFocusNode = FocusNode(debugLabel: 'photo_viewer_play');
+
   /// Images this viewer put in the artwork cache, by URL. Each one is the size
   /// of the screen, so their decoded bitmaps leave the memory cache when the
   /// viewer closes, unless the sequence around it still shows them next to the
@@ -83,7 +90,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _photoFocusNode.requestFocus();
+      if (mounted) _entryFocusNode.requestFocus();
     });
   }
 
@@ -119,7 +126,47 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
     _transformation.dispose();
     _photoFocusNode.dispose();
     _backFocusNode.dispose();
+    _playFocusNode.dispose();
     super.dispose();
+  }
+
+  /// A clip of a sequence, which plays from its page instead of zooming.
+  bool get _isClip => widget.photo.kind == MediaKind.clip && _navigation?.onPlay != null;
+
+  FocusNode get _entryFocusNode => _isClip ? _playFocusNode : _photoFocusNode;
+
+  /// Focus comes back to the play button with the route when the player
+  /// closes.
+  void _play() => unawaited(_navigation?.onPlay?.call(widget.photo));
+
+  Widget _buildPlayButton(BuildContext context) {
+    final durationMs = widget.photo.durationMs;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FocusableButton(
+            focusNode: _playFocusNode,
+            onPressed: _play,
+            child: IconButton.filled(
+              onPressed: _play,
+              tooltip: t.common.play,
+              iconSize: 48,
+              padding: const EdgeInsets.all(16),
+              style: IconButton.styleFrom(backgroundColor: Colors.black54, foregroundColor: Colors.white),
+              icon: const AppIcon(Symbols.play_arrow_rounded),
+            ),
+          ),
+          if (durationMs != null && durationMs > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              formatDurationTimestamp(Duration(milliseconds: durationMs)),
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Colors.white),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   /// The photo's own title, or its album's when it has none.
@@ -145,7 +192,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
     if (!key.isDpadDirection) return handleBackKeyNavigation(context, event);
     if (event.isActionable) {
       if (key == LogicalKeyboardKey.arrowUp) _backFocusNode.requestFocus();
-      if (key == LogicalKeyboardKey.arrowDown) _photoFocusNode.requestFocus();
+      if (key == LogicalKeyboardKey.arrowDown) _entryFocusNode.requestFocus();
     }
     if (event is KeyDownEvent) {
       if (key == LogicalKeyboardKey.arrowLeft) _navigation?.onPrevious?.call();
@@ -235,6 +282,8 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                     event.logicalKey.isSelectKey ? KeyEventResult.handled : KeyEventResult.ignored,
                 child: InteractiveViewer(
                   transformationController: _transformation,
+                  // A clip's thumbnail stands for the video, so it does not zoom.
+                  scaleEnabled: !_isClip,
                   maxScale: _maxZoom,
                   child: SizedBox.expand(child: _buildPhoto()),
                 ),
@@ -249,6 +298,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                 onNext: () => _navigation?.onNext?.call(),
               ),
             ),
+            if (_isClip) Positioned.fill(child: _buildPlayButton(context)),
             const Positioned(
               top: 0,
               left: 0,
