@@ -113,6 +113,12 @@ abstract class Player {
 
   Future<void> seek(Duration position);
 
+  /// Keyframe-only seek: lands on a nearby keyframe instead of decoding up to
+  /// [position], so it is cheap enough to issue repeatedly while the user is
+  /// still choosing a target (a live scrub preview). Follow it with [seek] to
+  /// land exactly.
+  Future<void> seekFast(Duration position);
+
   /// Arm (or replace/clear) the item the backend should auto-advance into
   /// when the current one plays out — the gapless-audio primitive.
   ///

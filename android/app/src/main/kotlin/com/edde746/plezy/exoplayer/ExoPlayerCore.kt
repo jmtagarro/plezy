@@ -51,6 +51,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.RenderersFactory
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioCapabilities
 import androidx.media3.exoplayer.audio.AudioSink
@@ -3807,7 +3808,8 @@ class ExoPlayerCore(private val activity: Activity) :
     setVisible(false)
   }
 
-  fun seekTo(positionMs: Long) {
+  /** [fast] lands on the closest sync sample instead of decoding up to [positionMs]. */
+  fun seekTo(positionMs: Long, fast: Boolean = false) {
     val player = exoPlayer ?: return
     val durationMs = player.duration
     val clampedPositionMs = if (!currentMediaIsLive && durationMs != C.TIME_UNSET && durationMs > 0L) {
@@ -3819,7 +3821,15 @@ class ExoPlayerCore(private val activity: Activity) :
     // from open/reload recovery re-seek back over an early seek near zero once
     // ExoPlayer reports STATE_READY.
     pendingStartPositionMs = 0L
-    player.seekTo(clampedPositionMs)
+    if (fast) {
+      // Seek parameters are sticky and queue on the playback thread in call order, so bracketing
+      // the seek applies CLOSEST_SYNC to this seek alone and every other seek stays exact.
+      player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+      player.seekTo(clampedPositionMs)
+      player.setSeekParameters(SeekParameters.DEFAULT)
+    } else {
+      player.seekTo(clampedPositionMs)
+    }
     lastPosition = clampedPositionMs
     lastKnownGoodPositionMs = clampedPositionMs
     // A seek discards whatever the stall watchdog was measuring: it compares against a baseline

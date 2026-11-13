@@ -593,6 +593,15 @@ class PlayerNative extends PlayerBase {
   }
 
   @override
+  Future<void> seekFast(Duration position) async {
+    if (_nativeCoreUnavailable) return;
+    await runSeek(
+      position,
+      () => command(['seek', (sourcePositionFor(position).inMilliseconds / 1000.0).toString(), 'absolute+keyframes']),
+    );
+  }
+
+  @override
   Future<void> setNext(Media? media) async {
     if (_nativeCoreUnavailable || !audioOnly || !initialized) return;
 

@@ -147,7 +147,7 @@ extension _PlexVideoControlsVisibilityMethods on _PlexVideoControlsState {
       return;
     }
     _setControlsState(() => _isScreenLocked = true);
-    _cancelEdgeAdjustmentGesture();
+    _cancelTouchAdjustmentGestures();
     widget.chromeController.hide(ignoreHolds: true);
   }
 

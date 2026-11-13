@@ -818,6 +818,7 @@ class SettingsService extends BaseSharedPreferencesService {
   /// pref gates the pinch recognizer in the player screen.
   static const gestureBrightnessSwipe = BoolPref('gesture_brightness_swipe', defaultValue: true);
   static const gestureVolumeSwipe = BoolPref('gesture_volume_swipe', defaultValue: true);
+  static const gestureSwipeSeek = BoolPref('gesture_swipe_seek', defaultValue: false);
   static const gesturePinchToZoom = BoolPref('gesture_pinch_to_zoom', defaultValue: true);
 
   /// Remember the brightness level set by the swipe gesture (#2178). When on,
@@ -1530,6 +1531,7 @@ class SettingsService extends BaseSharedPreferencesService {
     shuffleStartsFromBeginning,
     gestureBrightnessSwipe,
     gestureVolumeSwipe,
+    gestureSwipeSeek,
     gesturePinchToZoom,
     rememberBrightnessLevel,
     directPlayCoveredQuality,

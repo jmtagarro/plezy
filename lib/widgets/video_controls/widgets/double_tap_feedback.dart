@@ -31,7 +31,17 @@ class DoubleTapFeedback extends StatefulWidget {
   final ValueListenable<int> seconds;
   final bool animate;
 
-  const DoubleTapFeedback({super.key, required this.isForward, required this.seconds, required this.animate});
+  /// Optional second line under the amount — the landing time while a touch
+  /// swipe-seek is held. Null hides it, leaving the readout as it always was.
+  final ValueListenable<String?>? caption;
+
+  const DoubleTapFeedback({
+    super.key,
+    required this.isForward,
+    required this.seconds,
+    required this.animate,
+    this.caption,
+  });
 
   /// Inset from the anchored edge. TVs overscan roughly 5% of each edge, so
   /// derive it from the viewport rather than assuming 1080p logical geometry — a
@@ -150,34 +160,61 @@ class _DoubleTapFeedbackState extends State<DoubleTapFeedback> with SingleTicker
       shadows: _legibility,
     );
 
+    final amountRow = Row(
+      mainAxisSize: .min,
+      children: [
+        // Chevron leads on the side the seek travels toward.
+        if (!isForward) ...[_buildChevron(context), const SizedBox(width: 6)],
+        ValueListenableBuilder<int>(
+          valueListenable: widget.seconds,
+          builder: (context, seconds, _) {
+            // The amount is also the live-region leaf. Keeping the listener
+            // here updates text and semantics without rebuilding the chevron.
+            return Semantics(
+              container: true,
+              liveRegion: true,
+              excludeSemantics: true,
+              label: isForward
+                  ? t.videoControls.seekForwardButton(seconds: seconds)
+                  : t.videoControls.seekBackwardButton(seconds: seconds),
+              child: Text(formatSkipFeedbackLabel(seconds), style: amountStyle),
+            );
+          },
+        ),
+        if (isForward) ...[const SizedBox(width: 6), _buildChevron(context)],
+      ],
+    );
+
+    final caption = widget.caption;
     return Align(
       alignment: isForward ? Alignment.centerRight : Alignment.centerLeft,
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: DoubleTapFeedback._horizontalInset(context)),
-        child: Row(
-          mainAxisSize: .min,
-          children: [
-            // Chevron leads on the side the seek travels toward.
-            if (!isForward) ...[_buildChevron(context), const SizedBox(width: 6)],
-            ValueListenableBuilder<int>(
-              valueListenable: widget.seconds,
-              builder: (context, seconds, _) {
-                // The amount is also the live-region leaf. Keeping the listener
-                // here updates text and semantics without rebuilding the chevron.
-                return Semantics(
-                  container: true,
-                  liveRegion: true,
-                  excludeSemantics: true,
-                  label: isForward
-                      ? t.videoControls.seekForwardButton(seconds: seconds)
-                      : t.videoControls.seekBackwardButton(seconds: seconds),
-                  child: Text(formatSkipFeedbackLabel(seconds), style: amountStyle),
-                );
-              },
-            ),
-            if (isForward) ...[const SizedBox(width: 6), _buildChevron(context)],
-          ],
-        ),
+        child: caption == null
+            ? amountRow
+            : ValueListenableBuilder<String?>(
+                valueListenable: caption,
+                builder: (context, text, _) {
+                  if (text == null) return amountRow;
+                  return Column(
+                    mainAxisSize: .min,
+                    crossAxisAlignment: isForward ? .end : .start,
+                    children: [
+                      amountRow,
+                      Text(
+                        text,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: DoubleTapFeedback._labelSize(context) * 0.6,
+                          fontWeight: .w600,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                          shadows: _legibility,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
       ),
     );
   }

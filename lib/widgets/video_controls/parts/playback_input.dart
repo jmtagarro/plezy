@@ -291,10 +291,14 @@ extension _PlexVideoControlsPlaybackInputMethods on _PlexVideoControlsState {
 
   void _handleTouchPointerDown(PointerDownEvent event) {
     if (event.kind != PointerDeviceKind.touch) return;
+    // Consumed here whatever happens next, so a stale mark can never veto a
+    // later pointer that reuses nothing but the slot.
+    final onControlBar = _controlBarPointer == event.pointer;
+    _controlBarPointer = null;
     _twoFingerTapTracker.pointerDown(event.pointer, event.position);
     if (_twoFingerTapTracker.isChordActive) {
       _suppressTouchTaps();
-      _cancelEdgeAdjustmentGesture();
+      _cancelTouchAdjustmentGestures();
       return;
     }
     final hit = _edgeAdjustmentSurfaceHit(event.position);
@@ -307,6 +311,17 @@ extension _PlexVideoControlsPlaybackInputMethods on _PlexVideoControlsState {
               isSideEnabled: _edgeAdjustmentGestureEnabled,
             )
           : const MobileEdgeAdjustmentEvent.none(),
+    );
+    // Always registered, so a finger that may not seek still counts towards
+    // the multi-touch block.
+    _handleSwipeSeekEvent(
+      _swipeSeekTracker.pointerDown(
+        event.pointer,
+        hit?.position ?? event.localPosition,
+        hit?.size ?? Size.zero,
+        enabled:
+            hit != null && !onControlBar && _mobileTouchGesturesAllowed && _swipeSeekAllowedAt(hit.position, hit.size),
+      ),
     );
   }
 
@@ -323,19 +338,20 @@ extension _PlexVideoControlsPlaybackInputMethods on _PlexVideoControlsState {
     _twoFingerTapTracker.pointerMove(event.pointer, event.position);
     if (_twoFingerTapTracker.isChordActive) {
       _suppressTouchTaps();
-      _cancelEdgeAdjustmentGesture();
+      _cancelTouchAdjustmentGestures();
       return;
     }
     if (!_mobileTouchGesturesAllowed) {
-      _cancelEdgeAdjustmentGesture();
+      _cancelTouchAdjustmentGestures();
       return;
     }
     final hit = _edgeAdjustmentSurfaceHit(event.position);
     if (hit == null) {
-      _cancelEdgeAdjustmentGesture();
+      _cancelTouchAdjustmentGestures();
       return;
     }
     _handleEdgeAdjustmentEvent(_edgeAdjustmentTracker.pointerMove(event.pointer, hit.position));
+    _handleSwipeSeekEvent(_swipeSeekTracker.pointerMove(event.pointer, hit.position));
   }
 
   void _handleTouchPointerUp(PointerUpEvent event) {
@@ -344,6 +360,7 @@ extension _PlexVideoControlsPlaybackInputMethods on _PlexVideoControlsState {
     final isTwoFingerTap = _twoFingerTapTracker.pointerUp(event.pointer, event.position);
     final hit = _edgeAdjustmentSurfaceHit(event.position);
     _handleEdgeAdjustmentEvent(_edgeAdjustmentTracker.pointerUp(event.pointer, hit?.position ?? event.localPosition));
+    _handleSwipeSeekEvent(_swipeSeekTracker.pointerUp(event.pointer, hit?.position ?? event.localPosition));
     if (_isTouchTapSuppressed || isTwoFingerTap) _suppressTouchTaps();
     // Toggle playback with the chrome left down (#1505), the moment the chord
     // resolves and in every player state. Deliberately no _toggleControls()/
@@ -366,6 +383,7 @@ extension _PlexVideoControlsPlaybackInputMethods on _PlexVideoControlsState {
     if (!mounted || event.kind != PointerDeviceKind.touch) return;
     _twoFingerTapTracker.pointerCancel(event.pointer);
     _handleEdgeAdjustmentEvent(_edgeAdjustmentTracker.pointerCancel(event.pointer));
+    _handleSwipeSeekEvent(_swipeSeekTracker.pointerCancel(event.pointer));
     if (_twoFingerTapTracker.isChordActive) _suppressTouchTaps();
   }
 
@@ -629,6 +647,185 @@ extension _PlexVideoControlsPlaybackInputMethods on _PlexVideoControlsState {
     _handleEdgeAdjustmentEvent(_edgeAdjustmentTracker.cancel());
   }
 
+  /// Every one-finger touch adjustment on the surface: the edge swipes and the
+  /// horizontal swipe-seek.
+  void _cancelTouchAdjustmentGestures() {
+    _cancelEdgeAdjustmentGesture();
+    _cancelSwipeSeekGesture();
+  }
+
+  void _cancelSwipeSeekGesture() => _handleSwipeSeekEvent(_swipeSeekTracker.cancel());
+
+  /// Minimum spacing of live preview seeks while a swipe-seek is held.
+  static const Duration _swipePreviewInterval = Duration(milliseconds: 200);
+
+  /// Whether a finger landing at [localPosition] may start a swipe-seek. The
+  /// caller has already ruled out the chrome's bars and disallowed states.
+  bool _swipeSeekAllowedAt(Offset localPosition, Size size) {
+    if (!SettingsService.instance.read(SettingsService.gestureSwipeSeek)) return false;
+    // An absolute target is meaningless against a moving live edge, and a
+    // guest without control cannot seek at all.
+    if (!widget.canControl || widget.isLive) return false;
+    if (widget.player.state.duration <= Duration.zero) return false;
+    // Android's edge back gesture is a horizontal swipe from these strips;
+    // leave it to the system rather than seek until the system cancels us.
+    final insets = MediaQuery.systemGestureInsetsOf(context);
+    return localPosition.dx >= insets.left && localPosition.dx <= size.width - insets.right;
+  }
+
+  bool _inWatchTogetherSession() {
+    try {
+      return context.read<WatchTogetherProvider>().isInSession;
+    } catch (_) {
+      return false; // No session provider above this surface.
+    }
+  }
+
+  void _handleSwipeSeekEvent(MobileSwipeSeekEvent event) {
+    switch (event.type) {
+      case MobileSwipeSeekEventType.none:
+        return;
+      case MobileSwipeSeekEventType.activated:
+        _beginSwipeSeek(forward: event.forward);
+        return;
+      case MobileSwipeSeekEventType.update:
+        _updateSwipeSeek(event.deltaFraction);
+        return;
+      case MobileSwipeSeekEventType.ended:
+        _endSwipeSeek(event.deltaFraction);
+        return;
+      case MobileSwipeSeekEventType.cancelled:
+        _abortSwipeSeek();
+        return;
+    }
+  }
+
+  void _beginSwipeSeek({required bool forward}) {
+    // A speed hold that drifts sideways is still a speed hold.
+    if (_isLongPressing || !widget.canControl || widget.player.state.duration <= Duration.zero) {
+      _swipeSeekTracker.cancel();
+      return;
+    }
+    _suppressTouchTaps();
+    // A pending key burst, or a badge still fading from an earlier skip,
+    // describes another seek; this swipe starts its own readout.
+    _hiddenSeek.cancel();
+    _dismissSkipFeedback();
+    final origin = clampSeekPosition(widget.player, widget.player.state.position);
+    _swipeSeekOrigin = origin;
+    _swipeSeekTarget = origin;
+    _swipeSeekWasForward = forward;
+    // Direct play only: a transcode would rebuild its session per preview and
+    // a Watch Together room would seek every peer.
+    _swipeSeekPreviewAllowed = !widget.isTranscoding && !_inWatchTogetherSession();
+    _swipeSeekPreviewIssued = false;
+    _swipePreviewLastTarget = origin;
+    widget.chromeController.cancelAutoHide();
+    _showSwipeSeekReadout();
+  }
+
+  void _updateSwipeSeek(double deltaFraction) {
+    if (_swipeSeekOrigin == null) return;
+    _applySwipeSeekFraction(deltaFraction);
+    _showSwipeSeekReadout();
+    final target = _swipeSeekTarget;
+    if (_swipeSeekPreviewAllowed && target != null) _queueSwipePreview(target);
+  }
+
+  void _endSwipeSeek(double deltaFraction) {
+    final origin = _swipeSeekOrigin;
+    if (origin == null) return;
+    _applySwipeSeekFraction(deltaFraction);
+    final target = _swipeSeekTarget ?? origin;
+    final previewed = _swipeSeekPreviewIssued;
+    _clearSwipeSeekState();
+    _restartHideTimerForCurrentPlaybackState();
+    if (target == origin) {
+      _dismissSkipFeedback();
+      // Previews moved the picture; put it back where the swipe started.
+      if (previewed) unawaited(_seekToPosition(origin, notifyCompletion: false));
+      return;
+    }
+    // The readout stays up as confirmation and fades like any other skip.
+    _skipFeedbackCaption.value = null;
+    _showSkipFeedback(isForward: _swipeSeekWasForward);
+    unawaited(_seekToPosition(target));
+  }
+
+  void _abortSwipeSeek() {
+    final origin = _swipeSeekOrigin;
+    if (origin == null) return;
+    final previewed = _swipeSeekPreviewIssued;
+    _clearSwipeSeekState();
+    _dismissSkipFeedback();
+    _restartHideTimerForCurrentPlaybackState();
+    if (previewed) unawaited(_seekToPosition(origin, notifyCompletion: false));
+  }
+
+  /// Resolve [deltaFraction] against the frozen origin. The readout reports
+  /// the clamped distance, never more than the seek will travel (#2425).
+  void _applySwipeSeekFraction(double deltaFraction) {
+    final origin = _swipeSeekOrigin;
+    if (origin == null) return;
+    final offset = swipeSeekOffset(fraction: deltaFraction, duration: widget.player.state.duration);
+    final target = clampSeekPosition(widget.player, origin + offset);
+    _swipeSeekTarget = target;
+    if (target != origin) _swipeSeekWasForward = target > origin;
+  }
+
+  /// The skip badge, held without its fade timer for as long as the finger is
+  /// down, with the landing time as a caption.
+  void _showSwipeSeekReadout() {
+    final origin = _swipeSeekOrigin;
+    final target = _swipeSeekTarget;
+    if (origin == null || target == null) return;
+    _setSkipTotal((target - origin).abs());
+    _skipFeedbackCaption.value =
+        '${formatDurationTimestamp(target)} / ${formatDurationTimestamp(widget.player.state.duration)}';
+    _showSkipFeedback(isForward: _swipeSeekWasForward, scheduleFade: false);
+  }
+
+  /// Leading-edge throttle: the first change previews at once, later ones at
+  /// most every [_swipePreviewInterval], always to the newest target.
+  void _queueSwipePreview(Duration target) {
+    if (target == _swipePreviewLastTarget && _swipePreviewPending == null) return;
+    if (_swipePreviewTimer?.isActive ?? false) {
+      _swipePreviewPending = target;
+      return;
+    }
+    _dispatchSwipePreview(target);
+  }
+
+  void _dispatchSwipePreview(Duration target) {
+    _swipePreviewPending = null;
+    if (target != _swipePreviewLastTarget) {
+      _swipePreviewLastTarget = target;
+      if (_requestSeekPreview(target)) _swipeSeekPreviewIssued = true;
+    }
+    _swipePreviewTimer = Timer(_swipePreviewInterval, () {
+      final pending = _swipePreviewPending;
+      if (mounted && pending != null && _swipeSeekOrigin != null) _dispatchSwipePreview(pending);
+    });
+  }
+
+  bool _requestSeekPreview(Duration target) {
+    final requested = widget.onSeekPreviewRequested;
+    if (requested != null) return requested(target);
+    unawaited(widget.player.seekFast(target));
+    return true;
+  }
+
+  void _clearSwipeSeekState() {
+    _swipePreviewTimer?.cancel();
+    _swipePreviewTimer = null;
+    _swipePreviewPending = null;
+    _swipePreviewLastTarget = null;
+    _swipeSeekPreviewAllowed = false;
+    _swipeSeekPreviewIssued = false;
+    _swipeSeekOrigin = null;
+    _swipeSeekTarget = null;
+  }
+
   void _handleOuterTap() {
     if (PlatformDetector.isMobile(context)) {
       if (_isTouchTapSuppressed) return;
@@ -821,8 +1018,10 @@ extension _PlexVideoControlsPlaybackInputMethods on _PlexVideoControlsState {
       ? const Duration(seconds: 30)
       : const Duration(milliseconds: 1200);
 
-  /// Show animated visual feedback for skip gesture
-  void _showSkipFeedback({required bool isForward}) {
+  /// Show animated visual feedback for skip gesture. [scheduleFade] false
+  /// holds the readout up until a later call schedules it (a swipe in
+  /// progress).
+  void _showSkipFeedback({required bool isForward, bool scheduleFade = true}) {
     // Reads `tokens(context)` below, so a caller reaching here after disposal
     // would touch a defunct element rather than merely no-op.
     if (!mounted) return;
@@ -841,6 +1040,8 @@ extension _PlexVideoControlsPlaybackInputMethods on _PlexVideoControlsState {
         _doubleTapFeedbackOpacity = 1.0;
       });
     }
+
+    if (!scheduleFade) return;
 
     // Capture duration before timer to avoid context access in callback
     final slowDuration = tokens(context).slow;
@@ -871,7 +1072,9 @@ extension _PlexVideoControlsPlaybackInputMethods on _PlexVideoControlsState {
     _feedbackTimer = null;
     _feedbackHideTimer?.cancel();
     _feedbackHideTimer = null;
-    if (!mounted || (!_showDoubleTapFeedback && _accumulatedSkip == Duration.zero)) return;
+    if (!mounted) return;
+    _skipFeedbackCaption.value = null;
+    if (!_showDoubleTapFeedback && _accumulatedSkip == Duration.zero) return;
     _setControlsState(() {
       _showDoubleTapFeedback = false;
       _doubleTapFeedbackOpacity = 0.0;

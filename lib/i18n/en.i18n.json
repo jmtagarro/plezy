@@ -499,6 +499,8 @@
     "gestureBrightnessSwipeDescription": "Swipe up or down on the left edge to adjust brightness",
     "gestureVolumeSwipe": "Volume Swipe",
     "gestureVolumeSwipeDescription": "Swipe up or down on the right edge to adjust volume",
+    "gestureSwipeSeek": "Swipe to Seek",
+    "gestureSwipeSeekDescription": "Swipe left or right on the video to seek",
     "gesturePinchToZoom": "Pinch to Zoom",
     "gesturePinchToZoomDescription": "Pinch on the video to zoom in or out",
     "rememberBrightnessLevel": "Remember Brightness Level",

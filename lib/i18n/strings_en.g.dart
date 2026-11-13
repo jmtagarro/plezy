@@ -1445,6 +1445,12 @@ class Translations$settings$en {
 	/// en: 'Swipe up or down on the right edge to adjust volume'
 	String get gestureVolumeSwipeDescription => 'Swipe up or down on the right edge to adjust volume';
 
+	/// en: 'Swipe to Seek'
+	String get gestureSwipeSeek => 'Swipe to Seek';
+
+	/// en: 'Swipe left or right on the video to seek'
+	String get gestureSwipeSeekDescription => 'Swipe left or right on the video to seek';
+
 	/// en: 'Pinch to Zoom'
 	String get gesturePinchToZoom => 'Pinch to Zoom';
 
@@ -8596,6 +8602,8 @@ extension on Translations {
 			'settings.gestureBrightnessSwipeDescription' => 'Swipe up or down on the left edge to adjust brightness',
 			'settings.gestureVolumeSwipe' => 'Volume Swipe',
 			'settings.gestureVolumeSwipeDescription' => 'Swipe up or down on the right edge to adjust volume',
+			'settings.gestureSwipeSeek' => 'Swipe to Seek',
+			'settings.gestureSwipeSeekDescription' => 'Swipe left or right on the video to seek',
 			'settings.gesturePinchToZoom' => 'Pinch to Zoom',
 			'settings.gesturePinchToZoomDescription' => 'Pinch on the video to zoom in or out',
 			'settings.rememberBrightnessLevel' => 'Remember Brightness Level',
@@ -8629,10 +8637,10 @@ extension on Translations {
 			'themeEditor.slots.bg' => 'Background',
 			'themeEditor.slots.surface' => 'Surface',
 			'themeEditor.slots.outline' => 'Outline',
-			'themeEditor.slots.text' => 'Text',
-			'themeEditor.slots.textMuted' => 'Secondary text',
 			_ => null,
 		} ?? switch (path) {
+			'themeEditor.slots.text' => 'Text',
+			'themeEditor.slots.textMuted' => 'Secondary text',
 			'themeEditor.slots.accent' => 'Accent',
 			'themeEditor.opacity' => 'Opacity',
 			'themeEditor.hexHint' => '#RRGGBB or #AARRGGBB',
@@ -9143,10 +9151,10 @@ extension on Translations {
 			'profiles.newProfile' => 'New profile',
 			'profiles.profileNameHint' => 'e.g. Guests, Kids, Family Room',
 			'profiles.pinProtectionOptional' => 'PIN protection (optional)',
-			'profiles.pinExplain' => '4-digit PIN required to switch profiles.',
-			'profiles.continueButton' => 'Continue',
 			_ => null,
 		} ?? switch (path) {
+			'profiles.pinExplain' => '4-digit PIN required to switch profiles.',
+			'profiles.continueButton' => 'Continue',
 			'profiles.pinsDontMatch' => 'PINs don\'t match',
 			'profiles.tokenIdentityMismatch' => 'The Plex profile token resolved to an unexpected server',
 			'connections.sectionTitle' => 'Connections',
@@ -9657,10 +9665,10 @@ extension on Translations {
 			'liveTv.recordingRuleUpdated' => 'Recording rule updated',
 			'liveTv.guideReloadRequested' => 'Guide refresh requested',
 			'liveTv.guideReloadFailed' => 'Couldn\'t refresh the guide',
-			'liveTv.rulesProcessRequested' => 'Rule re-evaluation requested',
-			'liveTv.rulesProcessFailed' => 'Couldn\'t re-evaluate recording rules',
 			_ => null,
 		} ?? switch (path) {
+			'liveTv.rulesProcessRequested' => 'Rule re-evaluation requested',
+			'liveTv.rulesProcessFailed' => 'Couldn\'t re-evaluate recording rules',
 			'liveTv.recordShow' => 'Record show',
 			'liveTv.recordSettings.startEarly' => 'Start early (seconds)',
 			'liveTv.recordSettings.endLate' => 'End late (seconds)',
@@ -10171,10 +10179,10 @@ extension on Translations {
 			'performanceOverlay.cacheUsed' => 'Cache Used',
 			'performanceOverlay.cacheLimit' => 'Cache Limit',
 			'performanceOverlay.speed' => 'Speed',
-			'performanceOverlay.player' => 'Player',
-			'performanceOverlay.playMethod' => 'Play Method',
 			_ => null,
 		} ?? switch (path) {
+			'performanceOverlay.player' => 'Player',
+			'performanceOverlay.playMethod' => 'Play Method',
 			'performanceOverlay.memory' => 'Memory',
 			'performanceOverlay.uiFps' => 'UI FPS',
 			'performanceOverlay.fps' => 'FPS',

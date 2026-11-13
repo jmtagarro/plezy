@@ -73,6 +73,7 @@ import '../../focus/input_mode_tracker.dart';
 import 'models/track_controls_state.dart';
 import 'widgets/double_tap_feedback.dart';
 import 'helpers/mobile_edge_adjustment_tracker.dart';
+import 'helpers/mobile_swipe_seek_tracker.dart';
 import 'helpers/render_geometry.dart';
 import 'helpers/two_finger_tap_tracker.dart';
 import 'widgets/linux_keep_alive.dart';
@@ -597,6 +598,12 @@ class PlexVideoControls extends StatefulWidget {
   /// playback state around the native player seek.
   final Future<void> Function(Duration position)? onSeekRequested;
 
+  /// Called for a keyframe-only preview seek while a touch swipe is still
+  /// choosing its target, so the owning screen can refuse what a native fast
+  /// seek cannot reach in place. Returns whether a preview was dispatched.
+  /// Falls back to [Player.seekFast].
+  final bool Function(Duration position)? onSeekPreviewRequested;
+
   /// Called for app-level playback-rate requests (speed sheet, keyboard
   /// shortcuts, long-press 2x) so the owning screen can apply the rate and
   /// declare it to a Watch Together room. Falls back to [Player.setRate].
@@ -735,6 +742,7 @@ class PlexVideoControls extends StatefulWidget {
     this.onSubtitleTrackChanged,
     this.onSecondarySubtitleTrackChanged,
     this.onSeekRequested,
+    this.onSeekPreviewRequested,
     this.onRateRequested,
     this.onPlayPauseRequested,
     this.onSeekCompleted,
@@ -814,6 +822,9 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   // cannot drift the label off the distance travelled (#2425).
   Duration _accumulatedSkip = Duration.zero;
   final ValueNotifier<int> _accumulatedSkipSeconds = ValueNotifier<int>(0);
+  // Second line of the skip readout; only a touch swipe-seek in progress sets
+  // it, to the target it would land on.
+  final ValueNotifier<String?> _skipFeedbackCaption = ValueNotifier<String?>(null);
   // Desktop double-click detection (more reliable than Flutter's onDoubleTap).
   // The mobile skip zones do not use this; they pair off _singleTapTimer.
   DateTime? _lastSkipTapTime;
@@ -825,6 +836,21 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   Timer? _singleTapTimer;
   final TwoFingerTapTracker _twoFingerTapTracker = TwoFingerTapTracker();
   final MobileEdgeAdjustmentTracker _edgeAdjustmentTracker = MobileEdgeAdjustmentTracker();
+  final MobileSwipeSeekTracker _swipeSeekTracker = MobileSwipeSeekTracker();
+  // Where the active swipe-seek measures from, frozen when it locked.
+  Duration? _swipeSeekOrigin;
+  Duration? _swipeSeekTarget;
+  bool _swipeSeekWasForward = true;
+  // A pointer that went down on the chrome's top or bottom bar; it must never
+  // start a swipe-seek. Set by the bar's own Listener, which the hit-test path
+  // dispatches before the root one.
+  int? _controlBarPointer;
+  // Live preview of the swipe target (direct play only).
+  bool _swipeSeekPreviewAllowed = false;
+  bool _swipeSeekPreviewIssued = false;
+  Duration? _swipePreviewLastTarget;
+  Duration? _swipePreviewPending;
+  Timer? _swipePreviewTimer;
   final DeviceAdjustmentService _deviceAdjustmentService = DeviceAdjustmentService.instance;
   DateTime? _suppressTouchTapUntil;
   final ValueNotifier<_EdgeAdjustmentIndicatorState> _edgeAdjustmentIndicator = ValueNotifier((
@@ -990,8 +1016,8 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
     _edgeAdjustmentLifecycleListener = AppLifecycleListener(
       onResume: _handleDeviceAdjustmentResume,
       onShow: _handleDeviceAdjustmentResume,
-      onHide: _cancelEdgeAdjustmentGesture,
-      onPause: _cancelEdgeAdjustmentGesture,
+      onHide: _cancelTouchAdjustmentGestures,
+      onPause: _cancelTouchAdjustmentGestures,
     );
     if (PlatformDetector.isDesktopOS()) {
       // Fullscreen chrome (the button icon, the macOS traffic lights) follows
@@ -1098,6 +1124,9 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
     _feedbackTimer?.cancel();
     _feedbackHideTimer?.cancel();
     _accumulatedSkipSeconds.dispose();
+    _skipFeedbackCaption.dispose();
+    _swipePreviewTimer?.cancel();
+    _swipeSeekTracker.cancel();
     _edgeAdjustmentIndicatorHideTimer?.cancel();
     _edgeAdjustmentIndicatorClearTimer?.cancel();
     _edgeAdjustmentLifecycleListener?.dispose();
@@ -1158,7 +1187,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
     _deviceAdjustmentService.setRestoreSuppressed(isInPip);
     if (isInPip) {
       widget.chromeController.hold(PlayerChromeHold.pip);
-      _cancelEdgeAdjustmentGesture();
+      _cancelTouchAdjustmentGestures();
     } else {
       widget.chromeController.release(PlayerChromeHold.pip);
     }
@@ -1370,6 +1399,8 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                                                         }
                                                       },
                                                       isInEdgeAdjustmentZone: _isGlobalPositionInEdgeAdjustmentZone,
+                                                      onControlBarPointerDown: (pointer) =>
+                                                          _controlBarPointer = pointer,
                                                     );
                                                   },
                                                 ),
@@ -1395,6 +1426,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                             child: DoubleTapFeedback(
                               isForward: _lastDoubleTapWasForward,
                               seconds: _accumulatedSkipSeconds,
+                              caption: _skipFeedbackCaption,
                               animate: _doubleTapFeedbackOpacity > 0.0,
                             ),
                           ),

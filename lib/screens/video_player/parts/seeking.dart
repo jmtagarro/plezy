@@ -11,6 +11,24 @@ extension _VideoPlayerSeekingMethods on VideoPlayerScreenState {
     await _performSeekPlayback(target);
   }
 
+  /// Keyframe-only preview while a touch swipe is still choosing its target;
+  /// returns whether one was dispatched. Only a direct-played item outside a
+  /// Watch Together room previews: a transcode would rebuild its session per
+  /// preview and a room would seek every peer. Anything a native seek cannot
+  /// reach in place — a parked dead stream, another file of a stacked item, a
+  /// transition, an exact seek still draining — is left to the release seek.
+  bool _seekPlaybackPreview(Duration position) {
+    final currentPlayer = player;
+    if (!mounted || _shuttingDown || currentPlayer == null || widget.isLive) return false;
+    if (_isTranscoding || _watchTogetherRoom() != null || _eofRecovery.parked) return false;
+    if (_transitionGate.transition != PlaybackTransition.idle || _nativeSeekDrain != null) return false;
+    final target = clampSeekPosition(currentPlayer, position);
+    final partTimeline = _currentMediaInfo?.partTimeline;
+    if (partTimeline != null && !partTimeline.covers(target)) return false;
+    unawaited(currentPlayer.seekFast(target));
+    return true;
+  }
+
   Future<void> _performSeekPlayback(Duration position, {bool Function()? isCurrent}) async {
     final currentPlayer = player;
     if (!mounted || _shuttingDown || currentPlayer == null) return;

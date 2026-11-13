@@ -310,6 +310,9 @@ class FakePlayer implements Player {
   }
 
   @override
+  Future<void> seekFast(Duration position) => seek(position);
+
+  @override
   Future<void> setNext(Media? media) async {
     setNextCalls.add(media);
     if (media != null && failingSetNextUris.contains(media.uri)) {

@@ -240,6 +240,14 @@ void main() {
     expect(settings.read(SettingsService.gestureVolumeSwipe), isFalse);
     expect(settings.read(SettingsService.gestureBrightnessSwipe), isTrue);
     expect(settings.read(SettingsService.gesturePinchToZoom), isTrue);
+    expect(settings.read(SettingsService.gestureSwipeSeek), isFalse, reason: 'swipe-to-seek is opt-in');
+
+    final swipeSeek = find.text('Swipe to Seek');
+    await tester.ensureVisible(swipeSeek);
+    await tester.pumpAndSettle();
+    await tester.tap(swipeSeek);
+    await tester.pumpAndSettle();
+    expect(settings.read(SettingsService.gestureSwipeSeek), isTrue);
   });
 
   testWidgets('shuffle starts at beginning toggle persists (#2303)', (tester) async {

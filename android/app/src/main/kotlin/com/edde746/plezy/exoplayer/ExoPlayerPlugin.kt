@@ -893,12 +893,14 @@ class ExoPlayerPlugin :
       return
     }
 
+    val fast = call.argument<Boolean>("fast") ?: false
+
     activity?.runOnUiThread {
       if (usingMpvFallback) {
         val positionSeconds = positionMs / 1000.0
-        mpvCore?.command(arrayOf("seek", positionSeconds.toString(), "absolute"))
+        mpvCore?.command(arrayOf("seek", positionSeconds.toString(), if (fast) "absolute+keyframes" else "absolute"))
       } else {
-        playerCore?.seekTo(positionMs)
+        playerCore?.seekTo(positionMs, fast)
       }
       result.success(null)
     } ?: result.success(null)

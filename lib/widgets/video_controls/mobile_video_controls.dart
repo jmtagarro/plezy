@@ -87,6 +87,11 @@ class MobileVideoControls extends StatefulWidget {
   /// Returns true when a global touch position belongs to the parent edge-adjustment zone.
   final bool Function(Offset globalPosition)? isInEdgeAdjustmentZone;
 
+  /// Reports a touch landing on the top or bottom bar, before the parent's
+  /// surface Listener sees it, so a drag along the timeline is never taken for
+  /// a swipe-seek.
+  final ValueChanged<int>? onControlBarPointerDown;
+
   const MobileVideoControls({
     super.key,
     required this.player,
@@ -123,6 +128,7 @@ class MobileVideoControls extends StatefulWidget {
     this.chromeController,
     this.onStripVisibilityChanged,
     this.isInEdgeAdjustmentZone,
+    this.onControlBarPointerDown,
   });
 
   @override
@@ -334,7 +340,20 @@ class _MobileVideoControlsState extends State<MobileVideoControls> with SingleTi
       ),
     );
 
-    return DesktopAppBarHelper.wrapWithGestureDetector(topBar, opaque: true);
+    return _markControlBarPointers(DesktopAppBarHelper.wrapWithGestureDetector(topBar, opaque: true));
+  }
+
+  /// Observes, never claims: translucent, so hit testing through the bar is
+  /// unchanged, and nested in the hit path so it runs before the parent's
+  /// surface Listener.
+  Widget _markControlBarPointers(Widget bar) {
+    final onPointerDown = widget.onControlBarPointerDown;
+    if (onPointerDown == null) return bar;
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) => onPointerDown(event.pointer),
+      child: bar,
+    );
   }
 
   Widget _buildPlaybackControls(BuildContext _) {
@@ -393,7 +412,9 @@ class _MobileVideoControlsState extends State<MobileVideoControls> with SingleTi
     );
   }
 
-  Widget _buildBottomBar(BuildContext _) {
+  Widget _buildBottomBar(BuildContext context) => _markControlBarPointers(_buildBottomBarForMedia(context));
+
+  Widget _buildBottomBarForMedia(BuildContext _) {
     if (widget.isLive) {
       if (widget.captureBuffer != null) {
         // Live TV with time-shift: show seekable timeline

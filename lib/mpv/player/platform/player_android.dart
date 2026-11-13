@@ -260,6 +260,14 @@ class PlayerAndroid extends PlayerBase {
   }
 
   @override
+  Future<void> seekFast(Duration position) async {
+    await runSeek(
+      position,
+      () => invoke('seek', {'positionMs': sourcePositionFor(position).inMilliseconds, 'fast': true}),
+    );
+  }
+
+  @override
   Future<void> selectAudioTrack(AudioTrack track) async {
     await invoke('selectAudioTrack', {'trackId': track.id});
   }
