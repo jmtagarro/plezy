@@ -318,6 +318,7 @@ extension _VideoPlayerBuildMethods on VideoPlayerScreenState {
                             _onVideoCompleted(true, skipAutoPlayCountdown: skipAutoPlayCountdown),
                         canControl: authority.canControlPlayback,
                         canNavigateMediaItems: authority.canNavigateMediaItems,
+                        sequenceNavigation: widget.sequenceLink != null,
                         hasFirstFrame: _firstFrame.uiReady,
                         playNextFocusNode: _episode.showPlayNextDialog ? _playNextConfirmFocusNode : null,
                         playbackPromptOpen: _showStillWatchingPrompt,

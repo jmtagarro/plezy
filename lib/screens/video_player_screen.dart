@@ -103,6 +103,7 @@ import 'video_player/episode_session_state.dart';
 import 'video_player/first_frame_gate.dart';
 import 'video_player/frame_rate_matcher.dart';
 import 'video_player/player_output_format.dart';
+import 'video_player/player_sequence_link.dart';
 import 'video_player/companion_remote_binding.dart';
 import 'video_player/media_controls_screen_controller.dart';
 import 'video_player/media_reload_outcome.dart';
@@ -513,6 +514,11 @@ class VideoPlayerScreen extends StatefulWidget {
 
   bool get isLive => live != null;
 
+  /// The sequence the player was opened from, such as the photos and clips of
+  /// an album. Next and previous then close the player and move the sequence;
+  /// without one the player looks for an episode or queue item as usual.
+  final PlayerSequenceLink? sequenceLink;
+
   const VideoPlayerScreen({
     super.key,
     required this.metadata,
@@ -531,6 +537,7 @@ class VideoPlayerScreen extends StatefulWidget {
     this.strictMediaSelection = false,
     this.isLaunchCurrent,
     this.launchObserver,
+    this.sequenceLink,
   });
 
   @override
@@ -1008,6 +1015,7 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
     metadata: () => _currentMetadata,
     client: () => _isOfflinePlayback ? null : _getMediaServerClient(context),
     isPlaylistActive: () => context.read<PlaybackStateProvider>().isPlaylistActive,
+    sequenceLink: widget.sequenceLink,
     canControlPlayback: () => _canControlPlayback(),
     canNavigateMediaItems: () => _canNavigateMediaItems(),
     rewindOnResumeSeconds: () => _rewindOnResume,
@@ -1386,9 +1394,17 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   late final PlayerNavigationCoordinator _playerNavigationCoordinator;
 
+  /// The sequence found an item on either side, or lost one.
+  void _onSequenceLinkChanged() {
+    if (!mounted) return;
+    setState(() {});
+    unawaited(_mediaControls.syncAvailability());
+  }
+
   @override
   void initState() {
     super.initState();
+    widget.sequenceLink?.addListener(_onSequenceLinkChanged);
     PlaybackCoordinator.instance.registerVideoSession(
       shutdown: _shutdownVideo,
       stopAndExit: _stopVideoAndExit,
@@ -2459,6 +2475,7 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   @override
   void dispose() {
+    widget.sequenceLink?.removeListener(_onSequenceLinkChanged);
     PlaybackCoordinator.instance.unregisterVideoSession(
       _shutdownVideo,
       retirement: () async {
@@ -3085,6 +3102,16 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen>
         // playhead minutes with nothing on screen to say so. The predictable
         // step is the safer answer when the feedback is missing — see
         // `_seekToChapterWithFeedback` for the chaptered path.
+        // A player opened from a sequence steps it with the track keys, when
+        // there is an item in their direction (see the controls' own handler).
+        final link = widget.sequenceLink;
+        final trackDirection = link == null ? null : classifyMediaTrackKey(event.logicalKey);
+        if (trackDirection != null && link!.hasItem(trackDirection == MediaSeekDirection.forward ? 1 : -1)) {
+          if (event is KeyDownEvent) {
+            unawaited(trackDirection == MediaSeekDirection.forward ? _navigateToNextItem() : _navigateToPreviousItem());
+          }
+          return KeyEventResult.handled;
+        }
         final seekDirection = classifyPlayerSkipKey(event.logicalKey);
         if (seekDirection != null) {
           // Denied authority (a Watch Together room the viewer does not

@@ -17,6 +17,7 @@ extension _PlexVideoControlsNavigationMethods on _PlexVideoControlsState {
         metadata: widget.metadata,
         onNext: _abandoningBurst(widget.onNext),
         onPrevious: _abandoningBurst(widget.onPrevious),
+        hideUnavailableItemNavigation: widget.sequenceNavigation,
         onPlayPause: () => unawaited(_playOrPause()),
         chapters: _chapters,
         chaptersLoaded: _chaptersLoaded,

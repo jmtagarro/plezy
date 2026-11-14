@@ -511,7 +511,7 @@ void main() {
 
   testWidgets('a clip at the root of a photo library plays at once, over the viewer on it', (tester) async {
     final played = <String>[];
-    PhotoSequenceViewer.debugPlayClipOverride = (_, clip) async => played.add(clip.id);
+    PhotoSequenceViewer.debugPlayClipOverride = (_, clip, _) async => played.add(clip.id);
     addTearDown(() => PhotoSequenceViewer.debugPlayClipOverride = null);
     await pumpLibraryRoot(tester, [_photoLibraryItem('a', MediaKind.photo), _photoLibraryItem('v', MediaKind.clip)]);
 

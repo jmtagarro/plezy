@@ -30,19 +30,44 @@ extension _VideoPlayerEpisodeNavigationMethods on VideoPlayerScreenState {
   /// a loaded next item, while `previous` always has a target:
   /// [_restartOrPlayPrevious] restarts the current item — a movie as much as
   /// an episode — when nothing earlier is loaded.
-  bool get _hasNextItem => widget.isLive ? _hasNextChannel : _episode.next != null;
+  ///
+  /// A player opened from a sequence (see [VideoPlayerScreen.sequenceLink])
+  /// has exactly the items that sequence has on either side.
+  bool get _hasNextItem => widget.isLive
+      ? _hasNextChannel
+      : widget.sequenceLink != null
+      ? widget.sequenceLink!.hasNext
+      : _episode.next != null;
 
-  bool get _hasPreviousItem => !widget.isLive || _hasPreviousChannel;
+  bool get _hasPreviousItem => widget.isLive ? _hasPreviousChannel : widget.sequenceLink?.hasPrevious ?? true;
 
   /// The transport's next command: a channel zap on live TV, the next
   /// episode/queue item otherwise. Both targets no-op without one.
-  Future<void> _navigateToNextItem() => widget.isLive ? _switchLiveChannel(1) : _playNext();
+  Future<void> _navigateToNextItem() => widget.isLive
+      ? _switchLiveChannel(1)
+      : widget.sequenceLink != null
+      ? _stepSequence(1)
+      : _playNext();
 
   /// The transport's previous command: a channel zap on live TV; otherwise a
   /// restart or the previous item. A live stream has no "restart" — an
   /// absolute seek to zero would drag the playhead off the live edge — so
   /// the VOD fallback is unreachable here by construction.
-  Future<void> _navigateToPreviousItem() => widget.isLive ? _switchLiveChannel(-1) : _restartOrPlayPrevious();
+  Future<void> _navigateToPreviousItem() => widget.isLive
+      ? _switchLiveChannel(-1)
+      : widget.sequenceLink != null
+      ? _stepSequence(-1)
+      : _restartOrPlayPrevious();
+
+  /// Closes the player and asks the sequence it was opened from to move by
+  /// [step]. Previous goes straight to the item before, with no restart first:
+  /// the sequence's items are short clips and photos.
+  Future<void> _stepSequence(int step) async {
+    final link = widget.sequenceLink;
+    if (link == null || !link.hasItem(step) || !_canNavigateMediaItems()) return;
+    link.request(step);
+    await _handleBackButton();
+  }
 
   Future<void> _playNext() async {
     if (!_canNavigateMediaItems()) return;

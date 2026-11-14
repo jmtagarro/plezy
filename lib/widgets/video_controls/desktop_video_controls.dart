@@ -40,6 +40,10 @@ class DesktopVideoControls extends StatefulWidget {
   final MediaItem metadata;
   final VoidCallback? onNext;
   final VoidCallback? onPrevious;
+
+  /// Leaves out the next and previous buttons that have nowhere to go,
+  /// instead of dimming them.
+  final bool hideUnavailableItemNavigation;
   final VoidCallback onPlayPause;
   final List<MediaChapter> chapters;
   final bool chaptersLoaded;
@@ -119,6 +123,7 @@ class DesktopVideoControls extends StatefulWidget {
     required this.metadata,
     this.onNext,
     this.onPrevious,
+    this.hideUnavailableItemNavigation = false,
     required this.onPlayPause,
     required this.chapters,
     required this.chaptersLoaded,
@@ -487,9 +492,18 @@ class DesktopVideoControlsState extends State<DesktopVideoControls> {
 
   /// Handle key events for volume control navigation
   KeyEventResult _handleVolumeKeyEvent(FocusNode _, KeyEvent event) {
+    // The nearest button still in the row: next may be left out (see
+    // [DesktopVideoControls.hideUnavailableItemNavigation]).
+    FocusNode? leftTarget;
+    for (final node in _buttonFocusNodes.reversed) {
+      if (node.context != null) {
+        leftTarget = node;
+        break;
+      }
+    }
     return _handleDirectionalNavigation(
       event,
-      leftTarget: _nextItemFocusNode,
+      leftTarget: leftTarget ?? _nextItemFocusNode,
       rightTarget: _trackControlFocusNodes.isNotEmpty ? _trackControlFocusNodes.first : null,
     );
   }
@@ -766,17 +780,18 @@ class DesktopVideoControlsState extends State<DesktopVideoControls> {
             child: Row(
               children: [
                 if (!_isLive) ...[
-                  Opacity(
-                    opacity: _canControl ? 1.0 : 0.5,
-                    child: _buildFocusableButton(
-                      focusNode: _prevItemFocusNode,
-                      index: 0,
-                      icon: Symbols.skip_previous_rounded,
-                      color: widget.onPrevious != null && _canControl ? Colors.white : Colors.white54,
-                      onPressed: _canControl ? widget.onPrevious : null,
-                      semanticLabel: t.videoControls.previousButton,
+                  if (widget.onPrevious != null || !widget.hideUnavailableItemNavigation)
+                    Opacity(
+                      opacity: _canControl ? 1.0 : 0.5,
+                      child: _buildFocusableButton(
+                        focusNode: _prevItemFocusNode,
+                        index: 0,
+                        icon: Symbols.skip_previous_rounded,
+                        color: widget.onPrevious != null && _canControl ? Colors.white : Colors.white54,
+                        onPressed: _canControl ? widget.onPrevious : null,
+                        semanticLabel: t.videoControls.previousButton,
+                      ),
                     ),
-                  ),
                   // Previous chapter
                   StreamBuilder<String?>(
                     stream: _previousChapterLabelStream,
@@ -861,17 +876,18 @@ class DesktopVideoControlsState extends State<DesktopVideoControls> {
                     },
                   ),
                   // Next item
-                  Opacity(
-                    opacity: _canControl ? 1.0 : 0.5,
-                    child: _buildFocusableButton(
-                      focusNode: _nextItemFocusNode,
-                      index: 6,
-                      icon: Symbols.skip_next_rounded,
-                      color: widget.onNext != null && _canControl ? Colors.white : Colors.white54,
-                      onPressed: _canControl ? widget.onNext : null,
-                      semanticLabel: t.videoControls.nextButton,
+                  if (widget.onNext != null || !widget.hideUnavailableItemNavigation)
+                    Opacity(
+                      opacity: _canControl ? 1.0 : 0.5,
+                      child: _buildFocusableButton(
+                        focusNode: _nextItemFocusNode,
+                        index: 6,
+                        icon: Symbols.skip_next_rounded,
+                        color: widget.onNext != null && _canControl ? Colors.white : Colors.white54,
+                        onPressed: _canControl ? widget.onNext : null,
+                        semanticLabel: t.videoControls.nextButton,
+                      ),
                     ),
-                  ),
                 ],
                 // Live TV: Go to Live, only while time-shifted behind the live
                 // edge. A labelled pill, since no glyph names this action and

@@ -50,6 +50,10 @@ class MobileVideoControls extends StatefulWidget {
   final VoidCallback? onNext;
   final VoidCallback? onPrevious;
 
+  /// Leaves out the next and previous buttons that have nowhere to go,
+  /// instead of dimming them.
+  final bool hideUnavailableItemNavigation;
+
   /// Whether the user can control playback (false in host-only mode for non-host).
   final bool canControl;
 
@@ -108,6 +112,7 @@ class MobileVideoControls extends StatefulWidget {
     this.onBack,
     this.onNext,
     this.onPrevious,
+    this.hideUnavailableItemNavigation = false,
     this.canControl = true,
     this.hasFirstFrame,
     this.thumbnailDataBuilder,
@@ -356,7 +361,7 @@ class _MobileVideoControlsState extends State<MobileVideoControls> with SingleTi
         return Row(
           mainAxisAlignment: .center,
           children: [
-            if (!widget.isLive) ...[
+            if (!widget.isLive && (widget.onPrevious != null || !widget.hideUnavailableItemNavigation)) ...[
               CircularControlButton(
                 semanticLabel: t.videoControls.previousButton,
                 icon: Symbols.skip_previous_rounded,
@@ -378,7 +383,7 @@ class _MobileVideoControlsState extends State<MobileVideoControls> with SingleTi
                 }
               },
             ),
-            if (!widget.isLive) ...[
+            if (!widget.isLive && (widget.onNext != null || !widget.hideUnavailableItemNavigation)) ...[
               const SizedBox(width: 24),
               CircularControlButton(
                 semanticLabel: t.videoControls.nextButton,

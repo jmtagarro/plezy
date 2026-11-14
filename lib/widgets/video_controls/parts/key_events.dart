@@ -265,6 +265,19 @@ extension _PlexVideoControlsKeyEventMethods on _PlexVideoControlsState {
     // Android's own MediaSession, whose fixed 15-second fast-forward re-enters
     // the screen once per auto-repeat and drags the playhead minutes away
     // (#1375). Only the initial press acts — the repeats are the same press.
+    // In a sequence, such as an album's photos and clips, the track keys step
+    // to the item in their direction when there is one.
+    final trackDirection = widget.sequenceNavigation ? classifyMediaTrackKey(event.logicalKey) : null;
+    final trackStep = switch (trackDirection) {
+      MediaSeekDirection.forward => widget.onNext,
+      MediaSeekDirection.backward => widget.onPrevious,
+      null => null,
+    };
+    if (trackStep != null) {
+      if (event is KeyDownEvent) _abandoningBurst(trackStep)!.call();
+      return KeyEventResult.handled;
+    }
+
     final seekDirection = classifyPlayerSkipKey(event.logicalKey);
     if (seekDirection != null) {
       // Same chrome treatment every other key reaching here gets: a visible

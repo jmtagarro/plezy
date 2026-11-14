@@ -21,6 +21,7 @@ import 'package:plezy/media/server_capabilities.dart';
 import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/screens/photo_sequence_viewer.dart';
 import 'package:plezy/screens/photo_viewer_screen.dart';
+import 'package:plezy/screens/video_player/player_sequence_link.dart';
 import 'package:plezy/services/device_performance.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/theme/mono_theme.dart';
@@ -168,7 +169,7 @@ void main() {
     WidgetTester tester,
     PhotoSequence sequence, {
     MultiServerProvider? provider,
-    Future<void> Function(BuildContext context, MediaItem clip)? playClip,
+    PlayClip? playClip,
   }) async {
     await tester.pumpWidget(
       wrap(
@@ -540,7 +541,7 @@ void main() {
 
     /// Plays in [_StandInPlayer], which closes on Escape, or when [ends]
     /// completes.
-    Future<void> Function(BuildContext, MediaItem) player({Future<void>? ends}) => (context, item) async {
+    PlayClip player({Future<void>? ends}) => (context, item, _) async {
       played.add(item.id);
       await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => _StandInPlayer(ends: ends)));
     };
@@ -626,7 +627,7 @@ void main() {
     });
 
     testWidgets('a player that fails to open leaves the clip page as it was', (tester) async {
-      await open(tester, _sequenceOf(mixed, 1), playClip: (_, _) async => throw StateError('no player'));
+      await open(tester, _sequenceOf(mixed, 1), playClip: (_, _, _) async => throw StateError('no player'));
 
       await press(tester, LogicalKeyboardKey.enter);
 
@@ -755,7 +756,7 @@ void main() {
 
         testWidgets('when the player fails to open', (tester) async {
           recordModes(tester);
-          await open(tester, _sequenceOf(mixed, 1), playClip: (_, _) async => throw StateError('no player'));
+          await open(tester, _sequenceOf(mixed, 1), playClip: (_, _, _) async => throw StateError('no player'));
           await press(tester, LogicalKeyboardKey.enter);
           modes.clear();
 
@@ -785,6 +786,108 @@ void main() {
     });
   });
 
+  group('the player moves the sequence', () {
+    MediaItem clip(String id) =>
+        _item(id, MediaKind.clip).copyWith(durationMs: 65000, originallyAvailableAt: '2020-12-24');
+    final items = [_photo('a'), clip('x'), _item('album', MediaKind.photoAlbum), clip('y'), _photo('b'), clip('z')];
+    final played = <String>[];
+    final links = <PlayerSequenceLink>[];
+    setUp(() async {
+      played.clear();
+      links.clear();
+      // Moves by the player play at once whether or not clips autoplay.
+      resetSharedPreferencesForTest(initialAsync: const {'photo_clip_autoplay': false});
+      await SettingsService.getInstance();
+    });
+
+    PlayClip player() => (context, item, link) async {
+      played.add(item.id);
+      links.add(link);
+      await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => const _StandInPlayer()));
+    };
+
+    /// Next or previous in the player: it asks for the move and closes.
+    Future<void> step(WidgetTester tester, int step) async {
+      links.last.request(step);
+      Navigator.of(tester.element(find.byType(_StandInPlayer))).pop();
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the player knows which ways the sequence goes on', (tester) async {
+      await open(tester, _sequenceOf(items, 1), playClip: player());
+      await press(tester, LogicalKeyboardKey.enter);
+      expect((links.last.hasPrevious, links.last.hasNext), (true, true));
+      await press(tester, LogicalKeyboardKey.escape);
+
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(shownTitle(tester), 'z');
+      await press(tester, LogicalKeyboardKey.enter);
+      expect((links.last.hasPrevious, links.last.hasNext), (true, false));
+    });
+
+    testWidgets('next and previous in the player move the sequence, and a clip moved to plays at once', (tester) async {
+      final sequence = _sequenceOf(items, 1);
+      await open(tester, sequence, playClip: player());
+      await press(tester, LogicalKeyboardKey.enter);
+
+      // The viewer sits under the next clip's player.
+      await step(tester, 1);
+      expect(sequence.photo.id, 'y');
+      expect(played, ['x', 'y']);
+      expect(find.byType(_StandInPlayer), findsOneWidget);
+
+      await step(tester, -1);
+      expect(sequence.photo.id, 'x');
+      expect(played, ['x', 'y', 'x']);
+
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(shownTitle(tester), 'x');
+    });
+
+    testWidgets('a photo moved to from the player is shown, with nothing playing', (tester) async {
+      await open(tester, _sequenceOf(items, 3), playClip: player());
+      await press(tester, LogicalKeyboardKey.enter);
+
+      await step(tester, 1);
+      expect(shownTitle(tester), 'b');
+      expect(played, ['y']);
+      expect(find.byType(_StandInPlayer), findsNothing);
+      expect(primaryFocus()?.debugLabel, 'photo_viewer_photo');
+    });
+
+    testWidgets('closing the player without a move stays on the clip', (tester) async {
+      await open(tester, _sequenceOf(items, 1), playClip: player());
+      await press(tester, LogicalKeyboardKey.enter);
+
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(shownTitle(tester), 'x');
+      expect(played, ['x']);
+    });
+
+    testWidgets('an item found next to the clip while it plays reaches the player', (tester) async {
+      final next = Completer<void>();
+      final sequence = PhotoSequence(
+        index: 1,
+        photo: items[1],
+        length: () => items.length,
+        itemAt: (i) => i == 3 ? null : items[i],
+        loadItemAt: (i) async {
+          await next.future;
+          return items[i];
+        },
+      );
+      await open(tester, sequence, playClip: player());
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(links.last.hasNext, isFalse);
+
+      next.complete();
+      await tester.pumpAndSettle();
+      expect(links.last.hasNext, isTrue);
+    });
+  });
+
   group('clips play automatically', () {
     MediaItem clip(String id) =>
         _item(id, MediaKind.clip).copyWith(durationMs: 65000, originallyAvailableAt: '2020-12-24');
@@ -796,7 +899,7 @@ void main() {
       await SettingsService.getInstance();
     });
 
-    Future<void> Function(BuildContext, MediaItem) player({Future<void>? ends}) => (context, item) async {
+    PlayClip player({Future<void>? ends}) => (context, item, _) async {
       played.add(item.id);
       await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => _StandInPlayer(ends: ends)));
     };

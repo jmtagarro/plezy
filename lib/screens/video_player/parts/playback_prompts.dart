@@ -66,6 +66,19 @@ extension _VideoPlayerPlaybackPromptMethods on VideoPlayerScreenState {
       return;
     }
 
+    // A player opened from a sequence hands the end back to it: the sequence
+    // moves on, and there is no episode or queue item to look for.
+    if (widget.sequenceLink != null) {
+      if (_episode.completionLatch.triggered) {
+        _logVideoCompleted('action=exit sequence latched');
+        return;
+      }
+      _logVideoCompleted('action=exit sequence');
+      _episode.completionLatch.latch();
+      unawaited(_handleBackButton());
+      return;
+    }
+
     var navigationAction = completionNavigationAction(
       hasNext: _episode.next != null,
       adjacentStatus: _episode.nextStatus,

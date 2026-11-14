@@ -179,7 +179,7 @@ void main() {
 
     testWidgets('a clip card plays the clip at once, and closing the player leaves the viewer on it', (tester) async {
       final played = <String>[];
-      PhotoSequenceViewer.debugPlayClipOverride = (_, clip) async => played.add(clip.id);
+      PhotoSequenceViewer.debugPlayClipOverride = (_, clip, _) async => played.add(clip.id);
       addTearDown(() => PhotoSequenceViewer.debugPlayClipOverride = null);
       await tester.pumpWidget(
         await wrap(
@@ -204,7 +204,7 @@ void main() {
 
     testWidgets('with clips not playing automatically, a clip card opens the viewer on the clip', (tester) async {
       final played = <String>[];
-      PhotoSequenceViewer.debugPlayClipOverride = (_, clip) async => played.add(clip.id);
+      PhotoSequenceViewer.debugPlayClipOverride = (_, clip, _) async => played.add(clip.id);
       addTearDown(() => PhotoSequenceViewer.debugPlayClipOverride = null);
       await SettingsService.getInstance();
       await SettingsService.instance.write(SettingsService.photoClipAutoplay, false);

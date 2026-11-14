@@ -18,6 +18,7 @@ import '../utils/app_logger.dart';
 import '../utils/platform_detector.dart';
 import '../utils/provider_extensions.dart';
 import '../utils/video_player_navigation.dart';
+import 'video_player/player_sequence_link.dart';
 import '../widgets/app_icon.dart';
 import 'photo_viewer_screen.dart';
 
@@ -117,15 +118,20 @@ class PhotoNavigation extends InheritedWidget {
       onPlay != oldWidget.onPlay;
 }
 
+/// Plays a clip of a sequence, and completes once the player closes. Next and
+/// previous in the player go through [link].
+typedef PlayClip = Future<void> Function(BuildContext context, MediaItem clip, PlayerSequenceLink link);
+
 /// Shows the photos of a [PhotoSequence] one at a time, with one
 /// [PhotoViewerScreen] per photo, so nothing the viewer keeps about a photo,
 /// such as its zoom, carries over to the next one.
 class PhotoSequenceViewer extends StatefulWidget {
   final PhotoSequence sequence;
 
-  /// Replaces the player a clip opens in.
+  /// Replaces the player a clip opens in. The player moves the sequence
+  /// through [PlayerSequenceLink].
   @visibleForTesting
-  final Future<void> Function(BuildContext context, MediaItem clip)? playClip;
+  final PlayClip? playClip;
 
   /// Plays the clip the viewer opens on at once, when clips play
   /// automatically.
@@ -140,7 +146,7 @@ class PhotoSequenceViewer extends StatefulWidget {
   /// Replaces the player for viewers opened from a grid, which pass no
   /// [playClip].
   @visibleForTesting
-  static Future<void> Function(BuildContext context, MediaItem clip)? debugPlayClipOverride;
+  static PlayClip? debugPlayClipOverride;
 
   @override
   State<PhotoSequenceViewer> createState() => _PhotoSequenceViewerState();
@@ -177,6 +183,9 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
 
   /// The clip whose autoplay waits for the arrow key still held down.
   String? _clipAutoplayAfterKeyUp;
+
+  /// Tells the player of the clip playing which ways the sequence goes on.
+  PlayerSequenceLink? _playerLink;
 
   @override
   void initState() {
@@ -224,6 +233,7 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
         _previous!.then((entry) {
           if (!mounted || generation != _generation || entry == null) return;
           setState(() => _previousEntry = entry);
+          _syncPlayerLink();
           _updateWindow();
         }),
       );
@@ -233,6 +243,7 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
         _next!.then((entry) {
           if (!mounted || generation != _generation || entry == null) return;
           setState(() => _nextEntry = entry);
+          _syncPlayerLink();
           _updateWindow();
         }),
       );
@@ -240,14 +251,15 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
     _updateWindow();
   }
 
-  Future<void> _go(int step) async {
+  /// Moves by [step], and reports whether it moved.
+  Future<bool> _go(int step) async {
     final target = step < 0 ? _previous : _next;
-    if (_moving || target == null) return;
+    if (_moving || target == null) return false;
     _moving = true;
     final generation = _generation;
     try {
       final entry = await target;
-      if (!mounted || entry == null || generation != _generation) return;
+      if (!mounted || entry == null || generation != _generation) return false;
       final left = (index: _sequence.index, photo: _sequence.photo);
       setState(() {
         _sequence
@@ -259,6 +271,7 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
       // Before the frame that replaces the viewer, so the one leaving keeps the
       // image of the photo it showed, which is now next to the current one.
       _resolveNeighbours(previous: step > 0 ? left : null, next: step < 0 ? left : null);
+      return true;
     } finally {
       _moving = false;
     }
@@ -344,19 +357,40 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
     return false;
   }
 
+  void _syncPlayerLink() {
+    _playerLink
+      ?..hasPrevious = _previousEntry != null
+      ..hasNext = _nextEntry != null;
+  }
+
   /// Plays [clip] in the player, and stays on its page for when the player
-  /// closes or the clip ends.
+  /// closes or the clip ends. Next or previous in the player close it and
+  /// move the sequence; a clip moved to that way plays at once.
   Future<void> _play(MediaItem clip) async {
     _clipAutoplay?.cancel();
     _clipAutoplay = null;
     _clipAutoplayAfterKeyUp = null;
+    // Left for the garbage collector rather than disposed: the player may
+    // still be letting go of it after its route has closed.
+    final link = PlayerSequenceLink(hasPrevious: _previousEntry != null, hasNext: _nextEntry != null);
+    _playerLink = link;
     try {
       final playClip = widget.playClip ?? PhotoSequenceViewer.debugPlayClipOverride;
-      if (playClip != null) return await playClip(context, clip);
-      await navigateToVideoPlayer(context, metadata: clip);
+      if (playClip != null) {
+        await playClip(context, clip, link);
+      } else {
+        await navigateToVideoPlayer(context, metadata: clip, sequenceLink: link);
+      }
     } catch (error, stackTrace) {
       appLogger.w('Photo viewer: the clip did not play', error: error, stackTrace: stackTrace);
+    } finally {
+      if (identical(_playerLink, link)) _playerLink = null;
     }
+    final step = link.requestedStep;
+    if (step == null || !mounted || _sequence.photo.globalKey != clip.globalKey) return;
+    if (!await _go(step) || !mounted) return;
+    final next = _sequence.photo;
+    if (next.kind == MediaKind.clip) unawaited(_play(next));
   }
 
   void _goPrevious() => unawaited(_go(-1));

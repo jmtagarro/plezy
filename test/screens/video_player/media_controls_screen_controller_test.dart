@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/screens/video_player/media_controls_screen_controller.dart';
+import 'package:plezy/screens/video_player/player_sequence_link.dart';
 import 'package:plezy/screens/video_player/wakelock_controller.dart';
 import 'package:plezy/services/media_controls_manager.dart';
 import 'package:plezy/services/settings_service.dart';
@@ -75,6 +76,24 @@ void main() {
     expect(argumentsOf('disableControls'), containsAll(<String>['previous', 'next']));
   });
 
+  for (final (hasPrevious, hasNext) in [(false, true), (true, false)]) {
+    test('a clip of a sequence advertises only the ways the sequence goes on ($hasPrevious, $hasNext)', () async {
+      final manager = MediaControlsManager();
+      addTearDown(manager.dispose);
+      final controller = _vodController(
+        manager: manager,
+        player: FakeSyncPlayer(position: const Duration(seconds: 30)),
+        metadata: testMediaItem(kind: MediaKind.clip, title: 'Clip'),
+        sequenceLink: PlayerSequenceLink(hasPrevious: hasPrevious, hasNext: hasNext),
+      );
+
+      await controller.syncAvailability();
+
+      expect(argumentsOf(hasNext ? 'enableControls' : 'disableControls'), contains('next'));
+      expect(argumentsOf(hasPrevious ? 'enableControls' : 'disableControls'), contains('previous'));
+    });
+  }
+
   group('restoreAfterResume', () {
     Future<({List<String> transport, bool latchCleared})> resume({required bool held}) async {
       final manager = MediaControlsManager();
@@ -117,6 +136,7 @@ MediaControlsScreenController _vodController({
   List<String>? transport,
   bool Function()? wasPlayingBeforeInactive,
   void Function()? clearWasPlayingBeforeInactive,
+  PlayerSequenceLink? sequenceLink,
 }) {
   return MediaControlsScreenController(
     manager: () => manager,
@@ -141,5 +161,6 @@ MediaControlsScreenController _vodController({
     clearWasPlayingBeforeInactive: clearWasPlayingBeforeInactive ?? () {},
     wakelock: WakelockController(),
     recordLifecycle: (_, {action}) {},
+    sequenceLink: sequenceLink,
   );
 }

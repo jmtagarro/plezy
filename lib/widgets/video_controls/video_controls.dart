@@ -625,6 +625,11 @@ class PlexVideoControls extends StatefulWidget {
   /// Together guests never own this capability, even in anyone-control mode.
   final bool canNavigateMediaItems;
 
+  /// Next and previous move through the sequence the player was opened from,
+  /// such as the photos and clips of an album: their buttons show only where
+  /// there is an item to go to, and the hardware track keys step it too.
+  final bool sequenceNavigation;
+
   /// Notifier for whether first video frame has rendered (shows loading state when false).
   final ValueNotifier<bool>? hasFirstFrame;
 
@@ -742,6 +747,7 @@ class PlexVideoControls extends StatefulWidget {
     this.onReachedEnd,
     this.canControl = true,
     required this.canNavigateMediaItems,
+    this.sequenceNavigation = false,
     this.hasFirstFrame,
     this.playNextFocusNode,
     this.playbackPromptOpen = false,
@@ -1349,6 +1355,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                                                       onBack: widget.onBack,
                                                       onNext: _abandoningBurst(widget.onNext),
                                                       onPrevious: _abandoningBurst(widget.onPrevious),
+                                                      hideUnavailableItemNavigation: widget.sequenceNavigation,
                                                       canControl: widget.canControl,
                                                       hasFirstFrame: widget.hasFirstFrame,
                                                       thumbnailDataBuilder: widget.thumbnailDataBuilder,

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openwatchparty/openwatchparty.dart' as owp;
+import 'package:os_media_controls/os_media_controls.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plezy/database/app_database.dart';
 import 'package:plezy/i18n/strings.g.dart';
@@ -24,6 +25,7 @@ import 'package:plezy/providers/companion_remote_provider.dart';
 import 'package:plezy/providers/playback_state_provider.dart';
 import 'package:plezy/screens/video_player_screen.dart';
 import 'package:plezy/screens/video_player/live_tv_session_args.dart';
+import 'package:plezy/screens/video_player/player_sequence_link.dart';
 import 'package:plezy/services/download_storage_service.dart';
 import 'package:plezy/services/episode_navigation_service.dart';
 import 'package:plezy/services/offline_watch_sync_service.dart';
@@ -442,6 +444,106 @@ void main() {
       }
     });
   }
+
+  group('a player opened from a photo sequence', () {
+    Future<void> withSequencePlayer(
+      WidgetTester tester,
+      PlayerSequenceLink link,
+      Future<void> Function(GlobalKey<VideoPlayerScreenState> key) body,
+    ) => withMockPlayerChannels(
+      methodChannelName: 'com.plezy/mpv_player',
+      eventChannelName: 'com.plezy/mpv_player/events',
+      testBody: () async {
+        final screen = await _pushExitScreen(
+          tester,
+          db: db,
+          client: _ReloadClient(),
+          fakePlayer: _ExitPlayer(),
+          sequenceLink: link,
+        );
+        await body(screen.key);
+      },
+    );
+
+    Future<void> settleExit(WidgetTester tester) async {
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+    }
+
+    for (final (name, event, step) in [
+      ('next', const NextTrackEvent() as MediaControlEvent, 1),
+      ('previous', const PreviousTrackEvent() as MediaControlEvent, -1),
+    ]) {
+      testWidgets('$name from the media session closes the player and asks the sequence to move', (tester) async {
+        final link = PlayerSequenceLink(hasPrevious: true, hasNext: true);
+        await withSequencePlayer(tester, link, (key) async {
+          expect(key.currentState!.debugMediaControlRouterForTesting().route(event), isTrue);
+          await settleExit(tester);
+
+          expect(key.currentState, isNull);
+          expect(link.requestedStep, step);
+          expect(find.text('Browse'), findsOneWidget);
+        });
+      });
+
+      testWidgets('$name stays put when the sequence has nothing that way', (tester) async {
+        final link = PlayerSequenceLink(hasPrevious: step > 0, hasNext: step < 0);
+        await withSequencePlayer(tester, link, (key) async {
+          key.currentState!.debugMediaControlRouterForTesting().route(event);
+          await settleExit(tester);
+
+          expect(key.currentState, isNotNull);
+          expect(link.requestedStep, isNull);
+        });
+      });
+    }
+
+    testWidgets('the track keys step the sequence where it has an item, and skip within the clip otherwise', (
+      tester,
+    ) async {
+      final link = PlayerSequenceLink(hasPrevious: true);
+      await withSequencePlayer(tester, link, (key) async {
+        await tester.sendKeyEvent(LogicalKeyboardKey.mediaTrackNext);
+        await settleExit(tester);
+        expect(key.currentState, isNotNull, reason: 'nothing after: the key skips within the clip as before');
+        expect(link.requestedStep, isNull);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.mediaTrackPrevious);
+        await settleExit(tester);
+        expect(key.currentState, isNull);
+        expect(link.requestedStep, -1);
+      });
+    });
+
+    testWidgets('the end of the clip closes the player, without looking for a next episode', (tester) async {
+      final link = PlayerSequenceLink(hasNext: true);
+      await withSequencePlayer(tester, link, (key) async {
+        key.currentState!.debugCompleteVideoForTesting();
+        expect(key.currentState!.debugPlayNextPromptVisibleForTesting, isFalse);
+        await settleExit(tester);
+
+        expect(key.currentState, isNull);
+        expect(link.requestedStep, isNull, reason: 'the sequence moves on by itself after a clip ends');
+      });
+    });
+
+    testWidgets('the screen follows the sequence finding an item on either side', (tester) async {
+      final link = PlayerSequenceLink();
+      await withSequencePlayer(tester, link, (key) async {
+        key.currentState!.debugMediaControlRouterForTesting().route(const NextTrackEvent());
+        await settleExit(tester);
+        expect(key.currentState, isNotNull);
+
+        link.hasNext = true;
+        await tester.pump();
+        key.currentState!.debugMediaControlRouterForTesting().route(const NextTrackEvent());
+        await settleExit(tester);
+        expect(key.currentState, isNull);
+        expect(link.requestedStep, 1);
+      });
+    });
+  });
 
   for (final immersiveBelow in [false, true]) {
     testWidgets(
@@ -1422,6 +1524,7 @@ _pushExitScreen(
   required _ReloadClient client,
   required _ExitPlayer fakePlayer,
   WatchTogetherProvider? watchTogether,
+  PlayerSequenceLink? sequenceLink,
 }) async {
   final multi = testMultiServer(clients: [client]);
   final offlineWatch = OfflineWatchSyncService(database: db, serverManager: multi.manager);
@@ -1465,6 +1568,7 @@ _pushExitScreen(
         key: key,
         metadata: testMediaItem(id: 'exit-original', serverId: 'srv-1', backend: MediaBackend.jellyfin),
         selectedQualityPreset: TranscodeQualityPreset.original,
+        sequenceLink: sequenceLink,
       ),
     ).push(navigator.currentState!),
   );

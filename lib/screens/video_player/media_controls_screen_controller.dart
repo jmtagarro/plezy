@@ -8,6 +8,7 @@ import '../../mpv/mpv.dart';
 import '../../services/media_controls_manager.dart';
 import '../../services/settings_service.dart';
 import '../../utils/app_logger.dart';
+import 'player_sequence_link.dart';
 import '../../utils/platform_detector.dart';
 import '../../utils/player_utils.dart';
 import 'wakelock_controller.dart';
@@ -45,7 +46,12 @@ class MediaControlsScreenController {
     required this._clearWasPlayingBeforeInactive,
     required this._wakelock,
     required this._recordLifecycle,
+    this.sequenceLink,
   });
+
+  /// The sequence the player was opened from, which answers next and
+  /// previous on its own (see [VideoPlayerScreen.sequenceLink]).
+  final PlayerSequenceLink? sequenceLink;
 
   final MediaControlsManager? Function() _manager;
   final Player? Function() _player;
@@ -125,8 +131,13 @@ class MediaControlsScreenController {
     // Off live, previous is always advertised: it restarts the current item
     // when nothing earlier is loaded. An episode or queue item also advertises
     // next, which resolves once the adjacent item arrives.
-    final hasNextItem = isLive ? _hasNextLiveChannel() : _metadata().isEpisode || _isPlaylistActive();
-    final hasPreviousItem = !isLive || _hasPreviousLiveChannel();
+    final link = sequenceLink;
+    final hasNextItem = isLive
+        ? _hasNextLiveChannel()
+        : link != null
+        ? link.hasNext
+        : _metadata().isEpisode || _isPlaylistActive();
+    final hasPreviousItem = isLive ? _hasPreviousLiveChannel() : link?.hasPrevious ?? true;
     final contentCanSeek = !isLive && currentPlayer.state.seekable;
     final canControlPlayback = _canControlPlayback();
     final canNavigateMediaItems = _canNavigateMediaItems();

@@ -17,6 +17,7 @@ import '../providers/watch_state_store.dart';
 import '../watch_together/providers/watch_together_provider.dart';
 import '../watch_together/models/watch_copy.dart';
 import '../screens/video_player_screen.dart';
+import '../screens/video_player/player_sequence_link.dart';
 import '../services/external_player_service.dart';
 import '../services/local_playback_history.dart';
 import '../services/offline_watch_sync_service.dart';
@@ -321,6 +322,7 @@ Future<bool?> navigateToVideoPlayer(
   bool strictMediaSelection = false,
   bool explicitStartPolicy = false,
   PlaybackLaunchObserver? launchObserver,
+  PlayerSequenceLink? sequenceLink,
 }) async {
   final watchTogether = isOffline || watchTogetherCopy == null ? null : context.read<WatchTogetherProvider?>();
   // A launch for the Watch Together room is stale once the room moved on.
@@ -507,6 +509,7 @@ Future<bool?> navigateToVideoPlayer(
         strictMediaSelection: strictMediaSelection,
         isLaunchCurrent: isLaunchCurrent,
         launchObserver: launchObserver,
+        sequenceLink: sequenceLink,
       ),
     );
 
