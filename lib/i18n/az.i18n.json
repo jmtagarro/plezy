@@ -507,6 +507,7 @@
     "photos": "",
     "photoClipAutoplay": "",
     "photoClipAutoplayDescription": "",
+    "photoSlideshowDuration": "",
     "controls": "İdarəetmələr",
     "rememberPlayerChanges": "Pleyer dəyişikliklərini yadda saxla",
     "rememberPlayerChangesDescription": "Oxutma zamanı edilən dəyişikliklərin harada saxlanacağı və yenidən tətbiq ediləcəyi",
@@ -812,7 +813,8 @@
     "markAsWatched": "Baxıldı olaraq işarələ",
     "markAsUnwatched": "Baxılmadı olaraq işarələ",
     "previousPhoto": "",
-    "nextPhoto": ""
+    "nextPhoto": "",
+    "slideshowPaused": ""
   },
   "audioTracks": {
     "track": "Səs zolağı ${n}"

@@ -300,4 +300,38 @@ void main() {
     expect(SettingsService.instance.read(SettingsService.photoClipAutoplay), isFalse);
     expect(SettingsService.instance.prefs.getBool(SettingsService.photoClipAutoplay.key), isFalse);
   });
+
+  testWidgets('a slideshow shows each photo 5 s until another duration is chosen', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1000, 1400);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(MaterialApp(theme: monoTheme(MonoPalette.dark), home: const PlaybackSettingsScreen()));
+    await tester.pumpAndSettle();
+
+    final title = find.text('Slideshow Photo Duration');
+    await tester.scrollUntilVisible(title, 500, scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+    final tile = find.widgetWithText(ListTile, 'Slideshow Photo Duration');
+    expect(find.descendant(of: tile, matching: find.text('5 seconds')), findsOneWidget);
+
+    await tester.tap(title);
+    await tester.pumpAndSettle();
+    for (final seconds in [3, 5, 10, 20, 30]) {
+      expect(find.text('$seconds seconds'), findsWidgets);
+    }
+    await tester.tap(find.text('10 seconds').last);
+    await tester.pumpAndSettle();
+
+    expect(SettingsService.instance.read(SettingsService.photoSlideshowSeconds), 10);
+    expect(find.descendant(of: tile, matching: find.text('10 seconds')), findsOneWidget);
+  });
+
+  test('a slideshow duration outside the choices snaps to the nearest one', () async {
+    await SettingsService.instance.write(SettingsService.photoSlideshowSeconds, 7);
+    expect(SettingsService.instance.read(SettingsService.photoSlideshowSeconds), 5);
+    await SettingsService.instance.write(SettingsService.photoSlideshowSeconds, 300);
+    expect(SettingsService.instance.read(SettingsService.photoSlideshowSeconds), 30);
+  });
 }

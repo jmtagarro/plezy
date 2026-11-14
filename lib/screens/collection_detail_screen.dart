@@ -36,6 +36,8 @@ import '../i18n/strings.g.dart';
 import 'base_media_list_detail_screen.dart';
 import 'focusable_detail_screen_mixin.dart';
 import '../mixins/grid_focus_node_mixin.dart';
+import '../services/photo_shuffle/photo_shuffle_launcher.dart';
+import '../services/photo_shuffle/photo_shuffle_source.dart';
 import '../services/playlist_items_loader.dart';
 
 /// Screen to display the contents of a collection.
@@ -152,7 +154,7 @@ class _CollectionDetailScreenState extends BaseMediaListDetailScreen<CollectionD
     return [
       if (hasItems) ...[
         FocusableAction(icon: Symbols.play_arrow_rounded, tooltip: t.common.play, onPressed: playItems),
-        FocusableAction(icon: Symbols.shuffle_rounded, tooltip: t.common.shuffle, onPressed: shufflePlayItems),
+        FocusableAction(icon: Symbols.shuffle_rounded, tooltip: t.common.shuffle, onPressed: _shuffle),
       ],
       // Emptiness is handled inside [_downloadCollection], so the download
       // entry stays visible for empty collections.
@@ -206,6 +208,15 @@ class _CollectionDetailScreenState extends BaseMediaListDetailScreen<CollectionD
     final serverId = serverIdOrNull(widget.collection.serverId);
     if (!widget.isOffline || serverId == null) return null;
     return context.read<DownloadProvider>().getArtworkLocalPath(serverId, artworkPath);
+  }
+
+  /// A collection of photos shuffles into a slideshow of them; any other
+  /// plays shuffled.
+  Future<void> _shuffle() {
+    final photos =
+        PhotoShuffleLauncher.isPhotoCollection(widget.collection) || items.any((item) => item.kind.isPhotoContent);
+    if (photos) return PhotoShuffleLauncher.start(context, PhotoShuffleCollection(widget.collection));
+    return shufflePlayItems();
   }
 
   Future<void> _downloadCollection() async {

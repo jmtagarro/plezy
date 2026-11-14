@@ -9,6 +9,8 @@ import 'package:plezy/media/media_kind.dart';
 import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/screens/libraries/folder_tree_view.dart';
 import 'package:plezy/services/jellyfin_client.dart';
+import 'package:plezy/services/photo_shuffle/photo_shuffle_launcher.dart';
+import 'package:plezy/services/photo_shuffle/photo_shuffle_source.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/theme/mono_theme.dart';
 import 'package:provider/provider.dart';
@@ -93,6 +95,59 @@ void main() {
     await tester.tap(find.text('Album One'));
     await tester.pumpAndSettle();
     expect(find.text('Track One'), findsOneWidget);
+  });
+
+  testWidgets('a folder of a photo library shuffles into a slideshow of what it holds', (tester) async {
+    final started = <PhotoShuffleTarget>[];
+    PhotoShuffleLauncher.debugStartOverride = (_, target) async => started.add(target);
+    addTearDown(() => PhotoShuffleLauncher.debugStartOverride = null);
+    final client = JellyfinClient.forTesting(
+      connection: testJellyfinConnection(machineId: 'photo-server'),
+      httpClient: MockClient((request) async {
+        final foldersOnly = request.url.queryParameters['IncludeItemTypes'] == 'Folder,CollectionFolder';
+        final items = !foldersOnly && request.url.queryParameters['ParentId'] == 'photo-library'
+            ? const [
+                {'Id': 'trip', 'Name': 'Trip', 'Type': 'Folder', 'IsFolder': true},
+              ]
+            : const <Map<String, Object?>>[];
+        return http.Response(
+          jsonEncode({'Items': items, 'TotalRecordCount': items.length}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+    final provider = testMultiServer(clients: [client]).provider;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<MultiServerProvider>.value(
+        value: provider,
+        child: InputModeTracker(
+          child: MaterialApp(
+            theme: monoTheme(MonoPalette.dark),
+            home: Scaffold(
+              body: CustomScrollView(
+                slivers: const [
+                  FolderTreeView(libraryKey: 'photo-library', serverId: 'photo-server', libraryKind: MediaKind.photo),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Trip'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Shuffle'));
+    await tester.pumpAndSettle();
+
+    expect(
+      started.single,
+      isA<PhotoShuffleFolder>()
+          .having((target) => target.folder.id, 'folder', 'trip')
+          .having((target) => target.libraryId, 'library', 'photo-library'),
+    );
   });
 
   testWidgets('refresh reports whether the root listing landed', (tester) async {

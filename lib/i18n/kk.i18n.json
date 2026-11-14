@@ -507,6 +507,7 @@
     "photos": "",
     "photoClipAutoplay": "",
     "photoClipAutoplayDescription": "",
+    "photoSlideshowDuration": "",
     "controls": "Басқару элементтері",
     "rememberPlayerChanges": "Ойнатқыш өзгерістерін есте сақтау",
     "rememberPlayerChangesDescription": "Ойнату кезінде жасалған өзгеріс сақталатын және қайта қолданылатын орын",
@@ -812,7 +813,8 @@
     "markAsWatched": "Көрілді деп белгілеу",
     "markAsUnwatched": "Көрілмеді деп белгілеу",
     "previousPhoto": "",
-    "nextPhoto": ""
+    "nextPhoto": "",
+    "slideshowPaused": ""
   },
   "audioTracks": {
     "track": "Аудиожол ${n}"

@@ -507,6 +507,7 @@
     "photos": "Photos",
     "photoClipAutoplay": "Play Clips Automatically",
     "photoClipAutoplayDescription": "Play a clip in an album or photo library as soon as you open or move to it",
+    "photoSlideshowDuration": "Slideshow Photo Duration",
     "controls": "Controls",
     "rememberPlayerChanges": "Remember Player Changes",
     "rememberPlayerChangesDescription": "Where a change made during playback is saved and reapplied from",
@@ -812,7 +813,8 @@
     "markAsWatched": "Mark as watched",
     "markAsUnwatched": "Mark as unwatched",
     "previousPhoto": "Previous photo",
-    "nextPhoto": "Next photo"
+    "nextPhoto": "Next photo",
+    "slideshowPaused": "Slideshow paused"
   },
   "audioTracks": {
     "track": "Audio Track ${n}"

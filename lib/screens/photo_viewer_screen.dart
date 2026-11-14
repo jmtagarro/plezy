@@ -86,9 +86,20 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
   /// does not download it again.
   final Map<String, ImageProvider> _screenImages = {};
 
+  /// Whether the photo was zoomed in at the last change of the zoom.
+  bool _zoomedIn = false;
+
+  void _onZoomChanged() {
+    final zoomedIn = _transformation.value.getMaxScaleOnAxis() > 1;
+    if (zoomedIn == _zoomedIn) return;
+    _zoomedIn = zoomedIn;
+    if (zoomedIn) _navigation?.onZoomIn?.call();
+  }
+
   @override
   void initState() {
     super.initState();
+    _transformation.addListener(_onZoomChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _entryFocusNode.requestFocus();
     });
@@ -277,15 +288,25 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
             Positioned.fill(
               child: Focus(
                 focusNode: _photoFocusNode,
-                // Select does nothing on the photo for now.
-                onKeyEvent: (_, event) =>
-                    event.logicalKey.isSelectKey ? KeyEventResult.handled : KeyEventResult.ignored,
-                child: InteractiveViewer(
-                  transformationController: _transformation,
-                  // A clip's thumbnail stands for the video, so it does not zoom.
-                  scaleEnabled: !_isClip,
-                  maxScale: _maxZoom,
-                  child: SizedBox.expand(child: _buildPhoto()),
+                // Select does what the sequence makes of it, such as pausing
+                // a slideshow, and nothing otherwise.
+                onKeyEvent: (_, event) {
+                  if (!event.logicalKey.isSelectKey) return KeyEventResult.ignored;
+                  if (event is KeyDownEvent) _navigation?.onSelect?.call();
+                  return KeyEventResult.handled;
+                },
+                child: GestureDetector(
+                  onTap: _navigation?.onSelect,
+                  // Claims a double tap, so its two taps are not two pauses.
+                  // The double tap itself belongs to the photo's zoom.
+                  onDoubleTap: _navigation?.onSelect == null ? null : () {},
+                  child: InteractiveViewer(
+                    transformationController: _transformation,
+                    // A clip's thumbnail stands for the video, so it does not zoom.
+                    scaleEnabled: !_isClip,
+                    maxScale: _maxZoom,
+                    child: SizedBox.expand(child: _buildPhoto()),
+                  ),
                 ),
               ),
             ),

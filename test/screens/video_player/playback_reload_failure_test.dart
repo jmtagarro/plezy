@@ -525,6 +525,7 @@ void main() {
 
         expect(key.currentState, isNull);
         expect(link.requestedStep, isNull, reason: 'the sequence moves on by itself after a clip ends');
+        expect(link.ended, isTrue);
       });
     });
 

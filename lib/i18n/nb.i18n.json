@@ -507,6 +507,7 @@
     "photos": "",
     "photoClipAutoplay": "",
     "photoClipAutoplayDescription": "",
+    "photoSlideshowDuration": "",
     "controls": "Kontroller",
     "rememberPlayerChanges": "Husk endringer i spilleren",
     "rememberPlayerChangesDescription": "Hvor en endring under avspilling lagres og brukes på nytt",
@@ -812,7 +813,8 @@
     "markAsWatched": "Merk som sett",
     "markAsUnwatched": "Merk som usett",
     "previousPhoto": "",
-    "nextPhoto": ""
+    "nextPhoto": "",
+    "slideshowPaused": ""
   },
   "audioTracks": {
     "track": "Lydspor ${n}"

@@ -435,6 +435,19 @@ class PlaybackSettingsScreen extends StatelessWidget {
         title: t.settings.photoClipAutoplay,
         subtitle: t.settings.photoClipAutoplayDescription,
       ),
+      SettingSelectionTile<int>(
+        pref: SettingsService.photoSlideshowSeconds,
+        icon: Symbols.slideshow_rounded,
+        title: t.settings.photoSlideshowDuration,
+        subtitleBuilder: (seconds) => t.settings.secondsUnit(seconds: '$seconds'),
+        options: [
+          for (final seconds in SettingsService.photoSlideshowChoices)
+            DialogOption(
+              value: seconds,
+              title: t.settings.secondsUnit(seconds: '$seconds'),
+            ),
+        ],
+      ),
     ],
   );
 

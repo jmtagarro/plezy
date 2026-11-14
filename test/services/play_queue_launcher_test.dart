@@ -48,6 +48,7 @@ class _StubPlexClient implements PlexClient {
     int shuffle = 0,
     int repeat = 0,
     int continuous = 0,
+    int? recursive,
     String? librarySectionID,
     String? librarySectionTitle,
   }) async {

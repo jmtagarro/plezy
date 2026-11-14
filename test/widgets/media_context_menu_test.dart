@@ -46,6 +46,8 @@ import 'package:plezy/services/jellyfin_client.dart';
 import 'package:plezy/services/jellyfin_api_cache.dart';
 import 'package:plezy/services/music/music_playback_service.dart';
 import 'package:plezy/services/multi_server_manager.dart';
+import 'package:plezy/services/photo_shuffle/photo_shuffle_launcher.dart';
+import 'package:plezy/services/photo_shuffle/photo_shuffle_source.dart';
 import 'package:plezy/services/plex_api_cache.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/services/catalog/catalog_source.dart';
@@ -840,6 +842,50 @@ void main() {
     }
   });
 
+  group('MediaContextMenu photo shuffle', () {
+    final started = <PhotoShuffleTarget>[];
+    setUp(() {
+      started.clear();
+      PhotoShuffleLauncher.debugStartOverride = (_, target) async => started.add(target);
+    });
+    tearDown(() => PhotoShuffleLauncher.debugStartOverride = null);
+
+    Future<void> openAndChoose(WidgetTester tester, MediaItem item, String label) async {
+      final menuKey = await _pumpPlexMovieMenu(tester, const [], item: item);
+      menuKey.currentState!.showContextMenu(tester.element(find.text('picker target')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a photo album offers Shuffle, which starts a slideshow of it', (tester) async {
+      final album = testMediaItem(
+        id: 'album-1',
+        backend: MediaBackend.plex,
+        kind: MediaKind.photoAlbum,
+        serverId: 'plex-1',
+      );
+
+      await openAndChoose(tester, album, t.mediaMenu.shufflePlay);
+
+      expect(started.single, isA<PhotoShuffleAlbum>().having((target) => target.album.id, 'album', 'album-1'));
+    });
+
+    testWidgets('Shuffle on a photo collection starts a slideshow of it', (tester) async {
+      final collection =
+          (testMediaItem(id: 'col-1', backend: MediaBackend.plex, kind: MediaKind.collection, serverId: 'plex-1')
+                  as PlexMediaItem)
+              .copyWith(subtype: 'photo');
+
+      await openAndChoose(tester, collection, t.mediaMenu.shufflePlay);
+
+      expect(
+        started.single,
+        isA<PhotoShuffleCollection>().having((target) => target.collection.id, 'collection', 'col-1'),
+      );
+    });
+  });
+
   group('MediaContextMenu with no actions', () {
     const platforms = TargetPlatformVariant({TargetPlatform.linux, TargetPlatform.android});
 
@@ -853,7 +899,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    for (final kind in [MediaKind.photo, MediaKind.photoAlbum]) {
+    for (final kind in [MediaKind.photo]) {
       testWidgets('opens nothing for a ${kind.name}', (tester) async {
         final menuKey = await _pumpPlexMovieMenu(tester, const [], item: plexItem(kind));
 

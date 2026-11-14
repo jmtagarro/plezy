@@ -15,10 +15,12 @@ import '../media/media_kind.dart';
 import '../services/device_performance.dart';
 import '../services/settings_service.dart';
 import '../utils/app_logger.dart';
+import '../utils/snackbar_helper.dart';
 import '../utils/platform_detector.dart';
 import '../utils/provider_extensions.dart';
 import '../utils/video_player_navigation.dart';
 import 'video_player/player_sequence_link.dart';
+import 'video_player/wakelock_controller.dart';
 import '../widgets/app_icon.dart';
 import 'photo_viewer_screen.dart';
 
@@ -34,6 +36,7 @@ class PhotoSequence {
     required this._length,
     required this._itemAt,
     required this._loadItemAt,
+    this.onShown,
   });
 
   /// [photo] on its own, with nothing before or after it.
@@ -55,17 +58,21 @@ class PhotoSequence {
   final MediaItem? Function(int index) _itemAt;
   final Future<MediaItem?> Function(int index) _loadItemAt;
 
+  /// Told the position of every item the viewer shows, so a list that loads
+  /// in windows can fetch the next one ahead of time.
+  final void Function(int index)? onShown;
+
   /// The nearest photo or clip from [from] in the direction of [step] (-1 or 1),
-  /// loading the list as it goes. Null at the end of the list, or when part of
-  /// it cannot be loaded.
-  Future<PhotoSequenceEntry?> neighbour(int from, int step) async {
+  /// loading the list as it goes, and passing over the items [skip] names.
+  /// Null at the end of the list, or when part of it cannot be loaded.
+  Future<PhotoSequenceEntry?> neighbour(int from, int step, {bool Function(MediaItem item)? skip}) async {
     for (var i = from + step; i >= 0 && i < _length(); i += step) {
       final item = _itemAt(i) ?? await _loadItemAt(i);
       if (item == null) {
         appLogger.d('Photo viewer: no item at $i, so the sequence ends there');
         return null;
       }
-      if (shows(item)) return (index: i, photo: item);
+      if (shows(item) && skip?.call(item) != true) return (index: i, photo: item);
     }
     return null;
   }
@@ -73,12 +80,18 @@ class PhotoSequence {
 
 /// Opens the viewer on the photo [sequence] stands on. [autoplayInitialClip]
 /// plays it at once when it is a clip and clips play automatically, as for a
-/// tap on its card.
-Future<void> openPhotoSequence(BuildContext context, PhotoSequence sequence, {bool autoplayInitialClip = false}) {
+/// tap on its card. [slideshow] runs a slideshow through the sequence.
+Future<void> openPhotoSequence(
+  BuildContext context,
+  PhotoSequence sequence, {
+  bool autoplayInitialClip = false,
+  bool slideshow = false,
+}) {
   return Navigator.push<void>(
     context,
     MaterialPageRoute(
-      builder: (_) => PhotoSequenceViewer(sequence: sequence, autoplayInitialClip: autoplayInitialClip),
+      builder: (_) =>
+          PhotoSequenceViewer(sequence: sequence, autoplayInitialClip: autoplayInitialClip, slideshow: slideshow),
     ),
   );
 }
@@ -91,8 +104,18 @@ class PhotoNavigation extends InheritedWidget {
     required this.onNext,
     required this.keepsImage,
     this.onPlay,
+    this.onSelect,
+    this.onZoomIn,
     required super.child,
   });
+
+  /// Enter, Select or a tap on the photo, when the sequence does something
+  /// with them: a slideshow pauses or resumes.
+  final VoidCallback? onSelect;
+
+  /// The photo was zoomed in, by pinch, scroll or double tap: a slideshow
+  /// pauses so it does not move on from what is being looked at.
+  final VoidCallback? onZoomIn;
 
   /// Plays a clip of the sequence, and completes once the player closes.
   final Future<void> Function(MediaItem clip)? onPlay;
@@ -115,7 +138,9 @@ class PhotoNavigation extends InheritedWidget {
       onPrevious != oldWidget.onPrevious ||
       onNext != oldWidget.onNext ||
       keepsImage != oldWidget.keepsImage ||
-      onPlay != oldWidget.onPlay;
+      onPlay != oldWidget.onPlay ||
+      onSelect != oldWidget.onSelect ||
+      onZoomIn != oldWidget.onZoomIn;
 }
 
 /// Plays a clip of a sequence, and completes once the player closes. Next and
@@ -137,7 +162,27 @@ class PhotoSequenceViewer extends StatefulWidget {
   /// automatically.
   final bool autoplayInitialClip;
 
-  const PhotoSequenceViewer({super.key, required this.sequence, this.playClip, this.autoplayInitialClip = false});
+  /// Moves on through the sequence by itself, keeping the screen awake: each
+  /// photo for the slideshow duration, each clip as it plays to its end.
+  final bool slideshow;
+
+  const PhotoSequenceViewer({
+    super.key,
+    required this.sequence,
+    this.playClip,
+    this.autoplayInitialClip = false,
+    this.slideshow = false,
+  });
+
+  /// The photos of a slideshow fade from one to the next for this long.
+  static const slideshowCrossFade = Duration(milliseconds: 400);
+
+  /// How long a slideshow leaves an item that failed to load on screen
+  /// before it moves past it.
+  static const failedItemSkipDelay = Duration(seconds: 2);
+
+  /// Failures in a row after which a slideshow pauses rather than going on.
+  static const slideshowFailureLimit = 5;
 
   /// How long the viewer stays on a clip it moved to before playing it, so
   /// clips passed on the way to another item do not start.
@@ -147,6 +192,11 @@ class PhotoSequenceViewer extends StatefulWidget {
   /// [playClip].
   @visibleForTesting
   static PlayClip? debugPlayClipOverride;
+
+  /// Replaces loading an item's picture in a slideshow, and reports whether
+  /// it loaded.
+  @visibleForTesting
+  static Future<bool> Function(MediaItem item)? debugLoadsOverride;
 
   @override
   State<PhotoSequenceViewer> createState() => _PhotoSequenceViewerState();
@@ -187,11 +237,44 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
   /// Tells the player of the clip playing which ways the sequence goes on.
   PlayerSequenceLink? _playerLink;
 
+  /// A slideshow that has not reached its end, paused or not.
+  bool _showRunning = false;
+  bool _paused = false;
+
+  /// Moves the slideshow on once the current photo has had its time.
+  Timer? _slideTimer;
+
+  /// Moves the slideshow past an item that failed to load.
+  Timer? _skipTimer;
+
+  /// The next item of the slideshow, once its picture is loaded, or null at
+  /// the end. The slideshow only moves to an item that is ready.
+  Future<PhotoSequenceEntry?>? _ready;
+
+  /// Items of the slideshow that could not be loaded, by global key. The
+  /// slideshow passes over them both ways.
+  final Set<String> _failed = {};
+
+  /// Failures in a row since an item last loaded.
+  int _failureRun = 0;
+
+  /// Items whose picture the slideshow has seen load, by global key.
+  final Set<String> _loaded = {};
+
   @override
   void initState() {
     super.initState();
     _resolveNeighbours();
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
+    if (widget.slideshow) {
+      _showRunning = true;
+      unawaited(WakelockController.shared.setEnabled(true, owner: this));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _arrive();
+      });
+    } else {
+      _sequence.onShown?.call(_sequence.index);
+    }
     if (widget.autoplayInitialClip && _clipsAutoplay && _sequence.photo.kind == MediaKind.clip) {
       final clip = _sequence.photo;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -212,6 +295,9 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
   @override
   void dispose() {
     _clipAutoplay?.cancel();
+    _slideTimer?.cancel();
+    _skipTimer?.cancel();
+    if (widget.slideshow) unawaited(WakelockController.shared.setEnabled(false, owner: this));
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     for (final image in _window.values) {
       unawaited(image.evict());
@@ -226,8 +312,8 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
     final from = _sequence.index;
     _previousEntry = previous;
     _nextEntry = next;
-    _previous = previous != null ? Future.value(previous) : _sequence.neighbour(from, -1);
-    _next = next != null ? Future.value(next) : _sequence.neighbour(from, 1);
+    _previous = previous != null ? Future.value(previous) : _sequence.neighbour(from, -1, skip: _isFailed);
+    _next = next != null ? Future.value(next) : _sequence.neighbour(from, 1, skip: _isFailed);
     if (previous == null) {
       unawaited(
         _previous!.then((entry) {
@@ -260,21 +346,208 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
     try {
       final entry = await target;
       if (!mounted || entry == null || generation != _generation) return false;
-      final left = (index: _sequence.index, photo: _sequence.photo);
-      setState(() {
-        _sequence
-          ..index = entry.index
-          ..photo = entry.photo;
-        _direction = step;
-      });
-      _scheduleClipAutoplay();
-      // Before the frame that replaces the viewer, so the one leaving keeps the
-      // image of the photo it showed, which is now next to the current one.
-      _resolveNeighbours(previous: step > 0 ? left : null, next: step < 0 ? left : null);
+      _moveTo(entry, step);
       return true;
     } finally {
       _moving = false;
     }
+  }
+
+  void _moveTo(PhotoSequenceEntry entry, int step) {
+    final left = (index: _sequence.index, photo: _sequence.photo);
+    setState(() {
+      _sequence
+        ..index = entry.index
+        ..photo = entry.photo;
+      _direction = step;
+    });
+    // Before the frame that replaces the viewer, so the one leaving keeps the
+    // image of the photo it showed, which is now next to the current one.
+    final known = _isFailed(left.photo) ? null : left;
+    _resolveNeighbours(previous: step > 0 ? known : null, next: step < 0 ? known : null);
+    if (widget.slideshow) {
+      _arrive();
+    } else {
+      _sequence.onShown?.call(_sequence.index);
+      _scheduleClipAutoplay();
+    }
+  }
+
+  bool _isFailed(MediaItem item) => _failed.contains(item.globalKey);
+
+  static int get _slideSeconds =>
+      SettingsService.instanceOrNull?.read(SettingsService.photoSlideshowSeconds) ??
+      SettingsService.photoSlideshowSeconds.defaultValue;
+
+  /// The slideshow reached the item shown: a clip plays at once, a photo stays
+  /// up for the slideshow duration. Either way the next item starts loading.
+  void _arrive() {
+    _sequence.onShown?.call(_sequence.index);
+    if (!_showRunning) return;
+    _slideTimer?.cancel();
+    _skipTimer?.cancel();
+    _lookAhead();
+    final item = _sequence.photo;
+    if (_isFailed(item)) return _scheduleSkip();
+    // Reached by hand or first shown, so not loaded ahead: check it now.
+    if (!_loaded.contains(item.globalKey)) unawaited(_checkShown(item, _generation));
+    if (item.kind == MediaKind.clip) {
+      // A paused slideshow leaves a clip moved to by hand on its page.
+      if (!_paused) unawaited(_play(item));
+    } else {
+      _startSlideTimer();
+    }
+  }
+
+  /// Starts loading the item after the current one.
+  void _lookAhead() {
+    final ready = _readyNext(_generation);
+    // Awaited only when the slideshow moves on; a failure nobody waits for
+    // is not an error.
+    ready.ignore();
+    _ready = ready;
+  }
+
+  void _startSlideTimer() {
+    _slideTimer?.cancel();
+    if (!_showRunning || _paused) return;
+    _slideTimer = Timer(Duration(seconds: _slideSeconds), () => unawaited(_advance()));
+  }
+
+  /// Moves to the next item once it is ready, or ends the slideshow when
+  /// there is none.
+  Future<void> _advance() async {
+    final generation = _generation;
+    final ready = _ready;
+    if (!_showRunning || _paused || ready == null) return;
+    final PhotoSequenceEntry? entry;
+    try {
+      entry = await ready;
+    } on _TooManyFailures {
+      if (mounted && generation == _generation) _pauseForFailures();
+      return;
+    }
+    if (!mounted || generation != _generation || !_showRunning || _paused) return;
+    // A move by hand under way arrives on its own; should it go nowhere, the
+    // slideshow tries again after another duration.
+    if (_moving) return _startSlideTimer();
+    if (entry == null) return _endShow();
+    _moveTo(entry, 1);
+  }
+
+  /// The item after the current one whose picture has loaded. Items that fail
+  /// to load on the way are passed over, until too many fail in a row.
+  Future<PhotoSequenceEntry?> _readyNext(int generation) async {
+    var from = _sequence.index;
+    while (true) {
+      final entry = await _sequence.neighbour(from, 1, skip: _isFailed);
+      if (entry == null || !mounted || generation != _generation) return entry;
+      if (await _loads(entry.photo)) {
+        _failureRun = 0;
+        _loaded.add(entry.photo.globalKey);
+        return entry;
+      }
+      if (!mounted || generation != _generation) return null;
+      _recordFailure(entry.photo);
+      if (_failureRun >= PhotoSequenceViewer.slideshowFailureLimit) throw const _TooManyFailures();
+      from = entry.index;
+    }
+  }
+
+  /// Loads and decodes the screen-sized picture of [item], and reports
+  /// whether it loaded. A clip whose picture fails can still play.
+  Future<bool> _loads(MediaItem item) async {
+    final override = PhotoSequenceViewer.debugLoadsOverride;
+    if (override != null) return await override(item) || item.kind == MediaKind.clip;
+    final edge = _imageEdge;
+    if (edge == null) return true;
+    final image = _screenImageOf(item, edge);
+    if (image == null) return item.kind == MediaKind.clip;
+    var loaded = true;
+    await precacheImage(image.image, context, onError: (error, _) => loaded = false);
+    return loaded || item.kind == MediaKind.clip;
+  }
+
+  void _recordFailure(MediaItem item) {
+    _failed.add(item.globalKey);
+    _failureRun++;
+    appLogger.w('Photo slideshow: ${item.kind.name} ${item.globalKey} could not be loaded, so it is skipped');
+  }
+
+  /// The item on screen failed: it stays up for a moment, then the slideshow
+  /// moves past it the way it was going.
+  void _scheduleSkip() {
+    _skipTimer?.cancel();
+    if (!_showRunning || _paused) return;
+    final generation = _generation;
+    _skipTimer = Timer(PhotoSequenceViewer.failedItemSkipDelay, () async {
+      if (!mounted || generation != _generation || _paused) return;
+      if (_direction < 0 && await _go(-1)) return;
+      await _advance();
+    });
+  }
+
+  /// Checks that the item shown loads; one that does not is skipped like
+  /// any other failure.
+  Future<void> _checkShown(MediaItem item, int generation) async {
+    final loads = await _loads(item);
+    if (!mounted || generation != _generation || !_showRunning) return;
+    if (loads) {
+      _loaded.add(item.globalKey);
+      _failureRun = 0;
+      return;
+    }
+    _recordFailure(item);
+    _slideTimer?.cancel();
+    if (_failureRun >= PhotoSequenceViewer.slideshowFailureLimit) return _pauseForFailures();
+    _scheduleSkip();
+  }
+
+  void _pauseForFailures() {
+    if (!mounted) return;
+    _slideTimer?.cancel();
+    _skipTimer?.cancel();
+    setState(() => _paused = true);
+    final title = _sequence.photo.title ?? _sequence.photo.parentTitle ?? '';
+    showErrorSnackBar(context, t.errors.unableToLoad(context: title));
+  }
+
+  /// Enter, Select or a tap: pauses the slideshow, or resumes it with a full
+  /// duration for the photo shown.
+  void _togglePause() {
+    if (!_showRunning) return;
+    if (_paused) {
+      setState(() => _paused = false);
+      _failureRun = 0;
+      // A run of failures may have left the next item unfound; look again.
+      _lookAhead();
+      if (_isFailed(_sequence.photo)) {
+        _scheduleSkip();
+      } else if (_sequence.photo.kind == MediaKind.clip) {
+        unawaited(_play(_sequence.photo));
+      } else {
+        _startSlideTimer();
+      }
+    } else {
+      _slideTimer?.cancel();
+      _skipTimer?.cancel();
+      setState(() => _paused = true);
+    }
+  }
+
+  /// Zooming in pauses the slideshow; zooming back out leaves it paused.
+  void _pauseForZoom() {
+    if (!_showRunning || _paused) return;
+    _slideTimer?.cancel();
+    _skipTimer?.cancel();
+    setState(() => _paused = true);
+  }
+
+  void _endShow() {
+    _slideTimer?.cancel();
+    _skipTimer?.cancel();
+    setState(() => _showRunning = false);
+    unawaited(WakelockController.shared.setEnabled(false, owner: this));
   }
 
   /// Loads the neighbours' screen-sized images ahead, and drops the ones that
@@ -372,7 +645,11 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
     _clipAutoplayAfterKeyUp = null;
     // Left for the garbage collector rather than disposed: the player may
     // still be letting go of it after its route has closed.
-    final link = PlayerSequenceLink(hasPrevious: _previousEntry != null, hasNext: _nextEntry != null);
+    final link = PlayerSequenceLink(
+      hasPrevious: _previousEntry != null,
+      hasNext: _nextEntry != null,
+      leavesOnFailure: widget.slideshow,
+    );
     _playerLink = link;
     try {
       final playClip = widget.playClip ?? PhotoSequenceViewer.debugPlayClipOverride;
@@ -386,11 +663,26 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
     } finally {
       if (identical(_playerLink, link)) _playerLink = null;
     }
+    if (!mounted || _sequence.photo.globalKey != clip.globalKey) return;
     final step = link.requestedStep;
-    if (step == null || !mounted || _sequence.photo.globalKey != clip.globalKey) return;
-    if (!await _go(step) || !mounted) return;
-    final next = _sequence.photo;
-    if (next.kind == MediaKind.clip) unawaited(_play(next));
+    if (step != null) {
+      // A slideshow takes it from there on its own.
+      if (!await _go(step) || !mounted || widget.slideshow) return;
+      final next = _sequence.photo;
+      if (next.kind == MediaKind.clip) unawaited(_play(next));
+      return;
+    }
+    if (!_showRunning) return;
+    if (link.failed) {
+      _recordFailure(clip);
+      if (_failureRun >= PhotoSequenceViewer.slideshowFailureLimit) return _pauseForFailures();
+      return unawaited(_advance());
+    }
+    _failureRun = 0;
+    // A clip that played to its end hands straight on; one closed with Back
+    // gets a photo's time on its page first.
+    if (link.ended && !_paused) return unawaited(_advance());
+    _startSlideTimer();
   }
 
   void _goPrevious() => unawaited(_go(-1));
@@ -422,22 +714,68 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
     final hasNext = _nextEntry != null;
     // TV moves with the D-pad alone.
     final showButtons = !PlatformDetector.isTV();
+    final viewer = PhotoViewerScreen(key: ValueKey(photo.globalKey), photo: photo);
     return PhotoNavigation(
       onPrevious: _previous == null ? null : _goPrevious,
       onNext: _next == null ? null : _goNext,
       keepsImage: _keepsImage,
       onPlay: _play,
+      onSelect: widget.slideshow ? _togglePause : null,
+      onZoomIn: widget.slideshow ? _pauseForZoom : null,
       child: Stack(
         children: [
-          Positioned.fill(
-            child: PhotoViewerScreen(key: ValueKey(photo.globalKey), photo: photo),
-          ),
+          Positioned.fill(child: widget.slideshow ? _crossFade(viewer) : viewer),
           if (showButtons && hasPrevious) Positioned.fill(right: null, child: _buildButton(previous: true)),
           if (showButtons && hasNext) Positioned.fill(left: null, child: _buildButton(previous: false)),
+          if (_paused) _buildPausedBadge(context),
         ],
       ),
     );
   }
+
+  /// Fades each photo of a slideshow in over the one before. Only the photo
+  /// coming in takes focus and touches.
+  Widget _crossFade(PhotoViewerScreen viewer) {
+    return AnimatedSwitcher(
+      duration: DevicePerformance.isReduced ? Duration.zero : PhotoSequenceViewer.slideshowCrossFade,
+      layoutBuilder: (current, previous) => Stack(fit: StackFit.expand, children: [...previous, ?current]),
+      transitionBuilder: (child, animation) {
+        final leaving = child.key != viewer.key;
+        return FadeTransition(
+          opacity: animation,
+          child: ExcludeFocus(
+            excluding: leaving,
+            child: IgnorePointer(ignoring: leaving, child: child),
+          ),
+        );
+      },
+      child: viewer,
+    );
+  }
+
+  Widget _buildPausedBadge(BuildContext context) {
+    return Positioned(
+      right: 16,
+      bottom: 16,
+      child: SafeArea(
+        child: Semantics(
+          label: t.tooltips.slideshowPaused,
+          child: const DecoratedBox(
+            decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+            child: Padding(
+              padding: EdgeInsets.all(12),
+              child: AppIcon(Symbols.pause_rounded, color: Colors.white),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A slideshow found too many items in a row that would not load.
+class _TooManyFailures implements Exception {
+  const _TooManyFailures();
 }
 
 /// Reports a horizontal swipe made with one finger. A listener, not a gesture

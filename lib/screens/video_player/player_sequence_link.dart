@@ -5,7 +5,16 @@ import 'package:flutter/foundation.dart';
 /// the player's next and previous commands then close the player and ask the
 /// sequence to move, instead of looking for an episode or queue item.
 class PlayerSequenceLink extends ChangeNotifier {
-  PlayerSequenceLink({this._hasPrevious = false, this._hasNext = false});
+  PlayerSequenceLink({this._hasPrevious = false, this._hasNext = false, this.leavesOnFailure = false});
+
+  /// Whether a clip that cannot play closes the player by itself after a
+  /// moment, as a slideshow needs, instead of waiting on the failure screen
+  /// for Retry or Back.
+  final bool leavesOnFailure;
+
+  /// How long the failure stays on screen before a player that
+  /// [leavesOnFailure] closes.
+  static const failureNoticeDuration = Duration(seconds: 2);
 
   bool _hasPrevious;
   bool _hasNext;
@@ -36,4 +45,20 @@ class PlayerSequenceLink extends ChangeNotifier {
 
   /// Records the move the player closes for.
   void request(int step) => _requestedStep = step < 0 ? -1 : 1;
+
+  bool _ended = false;
+  bool _failed = false;
+
+  /// Whether the player closed because the clip played to its end.
+  bool get ended => _ended;
+
+  /// Whether the player closed because the clip could not play.
+  bool get failed => _failed;
+
+  void markEnded() => _ended = true;
+
+  void markFailed() => _failed = true;
+
+  /// A retried open took the failure off the screen.
+  void clearFailed() => _failed = false;
 }

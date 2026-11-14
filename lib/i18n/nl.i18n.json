@@ -507,6 +507,7 @@
     "photos": "",
     "photoClipAutoplay": "",
     "photoClipAutoplayDescription": "",
+    "photoSlideshowDuration": "",
     "controls": "Bediening",
     "rememberPlayerChanges": "Spelerwijzigingen onthouden",
     "rememberPlayerChangesDescription": "Waar een wijziging tijdens het afspelen wordt opgeslagen en opnieuw toegepast",
@@ -812,7 +813,8 @@
     "markAsWatched": "Als bekeken markeren",
     "markAsUnwatched": "Als ongekeken markeren",
     "previousPhoto": "",
-    "nextPhoto": ""
+    "nextPhoto": "",
+    "slideshowPaused": ""
   },
   "audioTracks": {
     "track": "Audiospoor ${n}"

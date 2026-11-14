@@ -7,6 +7,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:plezy/focus/focus_theme.dart';
 import 'package:plezy/focus/focusable_button.dart';
 import 'package:plezy/focus/input_mode_tracker.dart';
@@ -22,12 +23,14 @@ import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/screens/photo_sequence_viewer.dart';
 import 'package:plezy/screens/photo_viewer_screen.dart';
 import 'package:plezy/screens/video_player/player_sequence_link.dart';
+import 'package:plezy/screens/video_player/wakelock_controller.dart';
 import 'package:plezy/services/device_performance.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/theme/mono_theme.dart';
 import 'package:plezy/utils/immersive_mode_guard.dart';
 import 'package:plezy/utils/orientation_helper.dart';
 import 'package:plezy/utils/platform_detector.dart';
+import 'package:plezy/widgets/app_icon.dart';
 import 'package:provider/provider.dart';
 
 import '../test_helpers/media_items.dart';
@@ -885,6 +888,429 @@ void main() {
       next.complete();
       await tester.pumpAndSettle();
       expect(links.last.hasNext, isTrue);
+    });
+  });
+
+  group('slideshow', () {
+    MediaItem clip(String id) =>
+        _item(id, MediaKind.clip).copyWith(durationMs: 65000, originallyAvailableAt: '2020-12-24');
+    final played = <String>[];
+    final links = <PlayerSequenceLink>[];
+    final failing = <String>{};
+    final gates = <String, Completer<void>>{};
+
+    /// The sequence of the slideshow open, and the item it is on.
+    late PhotoSequence show;
+    String current() => show.photo.id;
+
+    setUp(() async {
+      played.clear();
+      links.clear();
+      failing.clear();
+      gates.clear();
+      resetSharedPreferencesForTest(initialAsync: const {'photo_slideshow_seconds': 3, 'photo_clip_autoplay': false});
+      await SettingsService.getInstance();
+      PhotoSequenceViewer.debugLoadsOverride = (item) async {
+        await gates[item.id]?.future;
+        return !failing.contains(item.id);
+      };
+    });
+    tearDown(() => PhotoSequenceViewer.debugLoadsOverride = null);
+
+    /// Plays in [_StandInPlayer]. [ends] plays the clip to its end; [fails]
+    /// makes it a clip that cannot play.
+    PlayClip player({Completer<void>? ends, bool fails = false}) => (context, item, link) async {
+      played.add(item.id);
+      links.add(link);
+      if (fails) {
+        link.markFailed();
+        return;
+      }
+      unawaited(ends?.future.then((_) => link.markEnded()));
+      await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => _StandInPlayer(ends: ends?.future)));
+    };
+
+    /// Opens a slideshow on [items] from a focused button.
+    Future<PhotoSequence> openShow(
+      WidgetTester tester,
+      List<MediaItem> items, {
+      int index = 0,
+      PlayClip? playClip,
+    }) async {
+      final sequence = show = _sequenceOf(items, index);
+      await tester.pumpWidget(
+        wrap(
+          Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                autofocus: true,
+                onPressed: () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PhotoSequenceViewer(sequence: sequence, slideshow: true, playClip: playClip),
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      return sequence;
+    }
+
+    /// Lets exactly [seconds] pass.
+    Future<void> wait(WidgetTester tester, num seconds) async {
+      await tester.pump(Duration(milliseconds: (seconds * 1000).round()));
+      await tester.pump();
+    }
+
+    bool pausedBadge() => find
+        .byWidgetPredicate((widget) => widget is AppIcon && widget.icon == Symbols.pause_rounded)
+        .evaluate()
+        .isNotEmpty;
+
+    final photos = [_photo('a'), _photo('b'), _photo('c'), _photo('d')];
+
+    for (final seconds in SettingsService.photoSlideshowChoices) {
+      testWidgets('shows each photo for $seconds s, then the next', (tester) async {
+        await SettingsService.instance.write(SettingsService.photoSlideshowSeconds, seconds);
+        await openShow(tester, photos);
+
+        await wait(tester, seconds - 1);
+        expect(current(), 'a');
+        await wait(tester, 1);
+        expect(current(), 'b');
+        await wait(tester, seconds);
+        expect(current(), 'c');
+      });
+    }
+
+    testWidgets('fades the next photo in over the one before, and only the one coming in takes focus', (tester) async {
+      await openShow(tester, photos);
+
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(PhotoViewerScreen), findsNWidgets(2));
+      await tester.pump(PhotoSequenceViewer.slideshowCrossFade);
+      expect(find.byType(PhotoViewerScreen), findsOneWidget);
+      expect(primaryFocus()?.debugLabel, 'photo_viewer_photo');
+    });
+
+    for (final (name, toggle) in <(String, Future<void> Function(WidgetTester))>[
+      ('Enter', (tester) => press(tester, LogicalKeyboardKey.enter)),
+      ('Select', (tester) => press(tester, LogicalKeyboardKey.select)),
+      (
+        'a tap',
+        (tester) async {
+          await tester.tap(find.byType(InteractiveViewer));
+          // A single tap acts once no second tap can make it a double one.
+          await tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 10));
+        },
+      ),
+    ]) {
+      testWidgets('$name pauses and resumes, with a paused badge while paused', (tester) async {
+        await openShow(tester, photos);
+
+        await wait(tester, 1);
+        await toggle(tester);
+        expect(pausedBadge(), isTrue);
+        await wait(tester, 20);
+        expect(current(), 'a');
+
+        await toggle(tester);
+        expect(pausedBadge(), isFalse);
+        await wait(tester, 2.5);
+        expect(current(), 'a', reason: 'resuming gives the photo a full duration');
+        await wait(tester, 0.6);
+        expect(current(), 'b');
+      });
+    }
+
+    group('zoom', () {
+      Offset center(WidgetTester tester) => tester.getCenter(find.byType(InteractiveViewer));
+
+      double scale(WidgetTester tester) => tester
+          .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+          .transformationController!
+          .value
+          .getMaxScaleOnAxis();
+
+      /// Two fingers moving [spread] apart each, or together when negative.
+      Future<void> pinch(WidgetTester tester, double spread) async {
+        final first = await tester.startGesture(center(tester) - const Offset(40, 0));
+        final second = await tester.startGesture(center(tester) + const Offset(40, 0));
+        for (var i = 0; i < 5; i++) {
+          await first.moveBy(Offset(-spread / 5, 0));
+          await second.moveBy(Offset(spread / 5, 0));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await first.up();
+        await second.up();
+        await tester.pump();
+      }
+
+      testWidgets('pinching in pauses the slideshow, and pinching back out leaves it paused', (tester) async {
+        await openShow(tester, photos);
+
+        await wait(tester, 1);
+        await pinch(tester, 60);
+        expect(scale(tester), greaterThan(1));
+        expect(pausedBadge(), isTrue);
+        await wait(tester, 10);
+        expect(current(), 'a');
+
+        await pinch(tester, -35);
+        expect(scale(tester), lessThanOrEqualTo(1));
+        expect(pausedBadge(), isTrue, reason: 'zooming out does not resume');
+        await wait(tester, 10);
+        expect(current(), 'a');
+
+        await tester.tap(find.byType(InteractiveViewer));
+        await tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 10));
+        expect(pausedBadge(), isFalse, reason: 'a single tap still resumes');
+      });
+
+      testWidgets('a zoom set on the photo, as a double tap sets it, pauses too', (tester) async {
+        await openShow(tester, photos);
+
+        tester.widget<InteractiveViewer>(find.byType(InteractiveViewer)).transformationController!.value =
+            Matrix4.diagonal3Values(2, 2, 1);
+        await tester.pump();
+
+        expect(pausedBadge(), isTrue);
+      });
+
+      testWidgets('a double tap pauses only by the zoom it makes, never through the single tap', (tester) async {
+        await openShow(tester, photos);
+
+        await tester.tap(find.byType(InteractiveViewer));
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.tap(find.byType(InteractiveViewer));
+        await tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 10));
+        // Where a double tap zooms the photo, zooming in pauses; nothing else
+        // about it pauses or resumes.
+        expect(pausedBadge(), scale(tester) > 1);
+
+        final paused = pausedBadge();
+        await tester.tap(find.byType(InteractiveViewer));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(pausedBadge(), paused, reason: 'not before the double-tap wait is over');
+        await tester.pump(kDoubleTapTimeout);
+        expect(pausedBadge(), !paused);
+      });
+    });
+
+    testWidgets('moving by hand restarts the timer, and a paused slideshow stays paused', (tester) async {
+      await openShow(tester, photos);
+
+      await wait(tester, 2);
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(current(), 'b');
+      await wait(tester, 2);
+      expect(current(), 'b');
+      await wait(tester, 1);
+      expect(current(), 'c');
+
+      await press(tester, LogicalKeyboardKey.enter);
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      expect(current(), 'b');
+      await wait(tester, 10);
+      expect(current(), 'b');
+      expect(pausedBadge(), isTrue);
+    });
+
+    testWidgets('keeps the photo shown until the next one has loaded', (tester) async {
+      gates['b'] = Completer<void>();
+      await openShow(tester, photos);
+
+      await wait(tester, 10);
+      expect(current(), 'a');
+
+      gates['b']!.complete();
+      await wait(tester, 0);
+      expect(current(), 'b');
+    });
+
+    testWidgets('waits for the next item of a list still being fetched', (tester) async {
+      final window = Completer<void>();
+      final sequence = PhotoSequence(
+        index: 0,
+        photo: photos[0],
+        length: () => photos.length,
+        itemAt: (i) => i == 0 ? photos[0] : null,
+        loadItemAt: (i) async {
+          await window.future;
+          return photos[i];
+        },
+      );
+      await tester.pumpWidget(wrap(PhotoSequenceViewer(sequence: show = sequence, slideshow: true)));
+      await tester.pump();
+
+      await wait(tester, 10);
+      expect(current(), 'a');
+      window.complete();
+      await wait(tester, 0);
+      expect(current(), 'b');
+    });
+
+    testWidgets('tells the list each position it shows, so it can fetch the next window ahead', (tester) async {
+      final shownAt = <int>[];
+      final sequence = show = PhotoSequence(
+        index: 0,
+        photo: photos[0],
+        length: () => photos.length,
+        itemAt: (i) => photos[i],
+        loadItemAt: (i) async => photos[i],
+        onShown: shownAt.add,
+      );
+      await tester.pumpWidget(wrap(PhotoSequenceViewer(sequence: sequence, slideshow: true)));
+      await tester.pump();
+
+      await wait(tester, 3);
+      await wait(tester, 3);
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      expect(shownAt, [0, 1, 2, 1]);
+    });
+
+    testWidgets('passes over a next photo that does not load', (tester) async {
+      failing.add('b');
+      await openShow(tester, photos);
+
+      await wait(tester, 3);
+      expect(current(), 'c');
+    });
+
+    testWidgets('a photo that fails on screen stays up for 2 s, then the slideshow goes past it, both ways', (
+      tester,
+    ) async {
+      failing.add('c');
+      await openShow(tester, photos, index: 2);
+
+      await wait(tester, 1.2);
+      expect(current(), 'c');
+      await wait(tester, 1);
+      expect(current(), 'd');
+
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      expect(current(), 'b', reason: 'going back passes over the photo that failed');
+    });
+
+    testWidgets('pauses with the error after 5 failures in a row, and a photo that loads starts the count again', (
+      tester,
+    ) async {
+      final items = [_photo('a'), for (var i = 0; i < 6; i++) _photo('f$i'), _photo('z')];
+      failing.addAll([for (var i = 0; i < 6; i++) 'f$i']);
+      await openShow(tester, items);
+
+      await wait(tester, 3);
+      expect(current(), 'a');
+      expect(pausedBadge(), isTrue);
+      expect(
+        find.descendant(
+          of: find.byType(SnackBar),
+          matching: find.text(t.errors.unableToLoad(context: 'a')),
+        ),
+        findsOneWidget,
+      );
+
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(pausedBadge(), isFalse);
+      await wait(tester, 3);
+      expect(current(), 'z');
+    });
+
+    group('clips', () {
+      final items = [_photo('a'), clip('x'), _photo('b'), _photo('c')];
+
+      testWidgets('a clip plays when the slideshow reaches it, and its end moves straight on', (tester) async {
+        final ends = Completer<void>();
+        await openShow(tester, items, playClip: player(ends: ends));
+
+        await wait(tester, 3);
+        expect(played, ['x']);
+        expect(find.byType(_StandInPlayer), findsOneWidget);
+        await wait(tester, 60);
+        expect(find.byType(_StandInPlayer), findsOneWidget, reason: 'the slideshow waits while the clip plays');
+
+        ends.complete();
+        await wait(tester, 0);
+        expect(current(), 'b');
+      });
+
+      testWidgets('Back in the player leaves the clip page up for a photo duration, then goes on', (tester) async {
+        await openShow(tester, items, playClip: player());
+
+        await wait(tester, 3);
+        await press(tester, LogicalKeyboardKey.escape);
+        expect(current(), 'x');
+        await wait(tester, 2);
+        expect(current(), 'x');
+        expect(played, ['x'], reason: 'the clip does not play again');
+        await wait(tester, 1.2);
+        expect(current(), 'b');
+      });
+
+      testWidgets('next in the player moves on, and the slideshow carries on from there', (tester) async {
+        await openShow(tester, items, playClip: player());
+
+        await wait(tester, 3);
+        links.last.request(1);
+        Navigator.of(tester.element(find.byType(_StandInPlayer))).pop();
+        await wait(tester, 0);
+        expect(current(), 'b');
+        await wait(tester, 3);
+        expect(current(), 'c');
+      });
+
+      testWidgets('a clip that cannot play is passed over', (tester) async {
+        await openShow(tester, items, playClip: player(fails: true));
+
+        await wait(tester, 3);
+        expect(played, ['x']);
+        await wait(tester, 0);
+        expect(current(), 'b');
+        expect(links.single.leavesOnFailure, isTrue);
+      });
+    });
+
+    group('screen awake', () {
+      testWidgets('held while the slideshow runs and let go at its end', (tester) async {
+        await openShow(tester, [_photo('a'), _photo('b')]);
+        expect(WakelockController.shared.isHeld, isTrue);
+
+        await wait(tester, 3);
+        expect(current(), 'b');
+        await wait(tester, 3);
+        expect(current(), 'b', reason: 'the slideshow stops on the last item');
+        expect(WakelockController.shared.isHeld, isFalse);
+
+        await press(tester, LogicalKeyboardKey.enter);
+        expect(pausedBadge(), isFalse, reason: 'there is nothing left to pause');
+      });
+
+      testWidgets('Back ends the slideshow, lets go and returns focus to where it started', (tester) async {
+        await openShow(tester, photos);
+        expect(WakelockController.shared.isHeld, isTrue);
+
+        await press(tester, LogicalKeyboardKey.escape);
+        expect(find.byType(PhotoSequenceViewer), findsNothing);
+        expect(WakelockController.shared.isHeld, isFalse);
+        expect(Focus.of(tester.element(find.text('open'))).hasPrimaryFocus, isTrue);
+        await tester.pump(const Duration(seconds: 10));
+      });
+
+      testWidgets('stays held while a clip plays over the slideshow and its player lets go', (tester) async {
+        await openShow(tester, [_photo('a'), clip('x'), _photo('b')], playClip: player());
+        await wait(tester, 3);
+        // What the player does as it closes.
+        unawaited(WakelockController.shared.setEnabled(false));
+        await press(tester, LogicalKeyboardKey.escape);
+        expect(WakelockController.shared.isHeld, isTrue);
+      });
     });
   });
 

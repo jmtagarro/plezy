@@ -30,6 +30,7 @@ mixin _PlexPlayQueueMethods on _PlexClientInternals {
     return PlayQueueResponse(
       playQueueID: playQueueID,
       playQueueSelectedItemID: flexibleInt(container['playQueueSelectedItemID']),
+      playQueueSelectedItemOffset: flexibleInt(container['playQueueSelectedItemOffset']),
       playQueueShuffled: flexibleBool(container['playQueueShuffled']),
       playQueueTotalCount: flexibleInt(container['playQueueTotalCount']),
       size: flexibleInt(container['size']),
@@ -50,6 +51,7 @@ mixin _PlexPlayQueueMethods on _PlexClientInternals {
     int shuffle = 0,
     int repeat = 0,
     int continuous = 0,
+    int? recursive,
     String? librarySectionID,
     String? librarySectionTitle,
   }) async {
@@ -59,6 +61,9 @@ mixin _PlexPlayQueueMethods on _PlexClientInternals {
         'shuffle': shuffle,
         'repeat': repeat,
         'continuous': continuous,
+        // Takes in what nested albums and folders hold, not only the top
+        // level of the uri.
+        'recursive': ?recursive,
         'uri': ?uri,
         'playlistID': ?playlistID,
         'key': ?key,

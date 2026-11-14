@@ -75,6 +75,7 @@ extension _VideoPlayerPlaybackPromptMethods on VideoPlayerScreenState {
       }
       _logVideoCompleted('action=exit sequence');
       _episode.completionLatch.latch();
+      widget.sequenceLink!.markEnded();
       unawaited(_handleBackButton());
       return;
     }

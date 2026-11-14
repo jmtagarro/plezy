@@ -19,6 +19,8 @@ import 'package:plezy/screens/photo_sequence_viewer.dart';
 import 'package:plezy/screens/photo_viewer_screen.dart';
 import 'package:plezy/services/download_manager_service.dart';
 import 'package:plezy/services/download_storage_service.dart';
+import 'package:plezy/services/photo_shuffle/photo_shuffle_launcher.dart';
+import 'package:plezy/services/photo_shuffle/photo_shuffle_source.dart';
 import 'package:plezy/services/jellyfin_api_cache.dart';
 import 'package:plezy/services/plex_api_cache.dart';
 import 'package:plezy/services/settings_service.dart';
@@ -225,6 +227,26 @@ void main() {
       expect(find.byTooltip(t.common.play), findsOneWidget);
       await tester.pump(const Duration(seconds: 2));
       expect(played, isEmpty);
+    });
+
+    testWidgets('Shuffle starts a slideshow of the whole album', (tester) async {
+      final started = <PhotoShuffleTarget>[];
+      PhotoShuffleLauncher.debugStartOverride = (_, target) async => started.add(target);
+      addTearDown(() => PhotoShuffleLauncher.debugStartOverride = null);
+      await tester.pumpWidget(
+        await wrap(
+          PhotoAlbumScreen(album: _album),
+          clients: [
+            _AlbumClient({'album': children}),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip(t.common.shuffle));
+      await tester.pumpAndSettle();
+
+      expect(started.single, isA<PhotoShuffleAlbum>().having((target) => target.album.id, 'album', _album.id));
     });
 
     testWidgets('a nested album still opens as its card does, not in the viewer', (tester) async {

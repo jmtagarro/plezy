@@ -1288,6 +1288,26 @@ mixin _JellyfinBrowseMethods on _JellyfinClientInternals {
     return page.items;
   }
 
+  /// A page of the photos and videos anywhere under [parentId] (an album,
+  /// folder, collection or library), in an order the server randomizes. The
+  /// order is drawn again for every page, so pages can repeat items and miss
+  /// others; callers drop the repeats.
+  Future<LibraryPage<MediaItem>> fetchRandomPhotoDescendantsPage(
+    String parentId, {
+    required int start,
+    required int size,
+    AbortController? abort,
+  }) {
+    return _fetchPlayableDescendantsPage(
+      parentId,
+      start: start,
+      size: size,
+      abort: abort,
+      includeItemTypes: 'Photo,Video',
+      randomOrder: true,
+    );
+  }
+
   Future<List<MediaItem>> _fetchAllPlayableDescendants(
     String parentId, {
     required String includeItemTypes,

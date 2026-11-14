@@ -507,6 +507,7 @@
     "photos": "",
     "photoClipAutoplay": "",
     "photoClipAutoplayDescription": "",
+    "photoSlideshowDuration": "",
     "controls": "控制",
     "rememberPlayerChanges": "记住播放器更改",
     "rememberPlayerChangesDescription": "播放期间所做的更改保存并重新应用的位置",
@@ -809,7 +810,8 @@
     "markAsWatched": "标记为已观看",
     "markAsUnwatched": "标记为未观看",
     "previousPhoto": "",
-    "nextPhoto": ""
+    "nextPhoto": "",
+    "slideshowPaused": ""
   },
   "audioTracks": {
     "track": "音轨 ${n}"

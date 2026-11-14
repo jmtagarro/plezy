@@ -38,6 +38,8 @@ import 'tabs/library_collections_tab.dart';
 import 'tabs/library_genres_tab.dart';
 import 'tabs/library_playlists_tab.dart';
 import 'tabs/base_library_tab.dart';
+import '../../services/photo_shuffle/photo_shuffle_launcher.dart';
+import '../../services/photo_shuffle/photo_shuffle_source.dart';
 
 enum LibraryTabType { recommended, browse, collections, playlists, genres }
 
@@ -868,7 +870,13 @@ class _LibrariesScreenState extends State<LibrariesScreen>
                 )
               : null,
         ),
-      if (selectedLibrary != null && MediaListPlaybackLauncher.canShuffleLibrary(selectedLibrary))
+      if (selectedLibrary != null && PhotoShuffleLauncher.shufflesLibrary(selectedLibrary))
+        FocusableAction(
+          icon: Symbols.shuffle_rounded,
+          tooltip: t.libraries.shuffleLibrary,
+          onPressed: () => unawaited(PhotoShuffleLauncher.start(context, PhotoShuffleLibrary(selectedLibrary))),
+        )
+      else if (selectedLibrary != null && MediaListPlaybackLauncher.canShuffleLibrary(selectedLibrary))
         FocusableAction(
           icon: Symbols.shuffle_rounded,
           tooltip: t.libraries.shuffleLibrary,

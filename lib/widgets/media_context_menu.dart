@@ -44,6 +44,8 @@ import '../utils/snackbar_helper.dart';
 import '../utils/dialogs.dart';
 import '../utils/downloads_folder_actions.dart';
 import '../services/external_player_service.dart';
+import '../services/photo_shuffle/photo_shuffle_launcher.dart';
+import '../services/photo_shuffle/photo_shuffle_source.dart';
 import 'collection_picker_dialog.dart';
 import '../screens/plex_match_screen.dart';
 import '../screens/media_detail_screen.dart';
@@ -688,7 +690,7 @@ class MediaContextMenuState extends State<MediaContextMenu> {
           !widget.isInContinueWatching &&
           ancestorSeriesKey != itemSeriesKey)
         _MenuAction(value: 'series', icon: Symbols.tv_rounded, label: t.mediaMenu.goToSeries),
-      if (mediaKind == MediaKind.show || mediaKind == MediaKind.season)
+      if (mediaKind == MediaKind.show || mediaKind == MediaKind.season || mediaKind == MediaKind.photoAlbum)
         _MenuAction(value: 'shuffle_play', icon: Symbols.shuffle_rounded, label: t.mediaMenu.shufflePlay),
       if (canLinkItem(mediaItem))
         _MenuAction(value: 'show_link', icon: Symbols.link_rounded, label: t.deepLinks.showLink),
@@ -938,7 +940,11 @@ class MediaContextMenuState extends State<MediaContextMenu> {
         await _navigateToSeries(context, mediaItem);
         break;
       case 'shuffle_play':
-        await _handleShufflePlayWithQueue(context);
+        if (mediaItem.kind == MediaKind.photoAlbum) {
+          await PhotoShuffleLauncher.start(context, PhotoShuffleAlbum(mediaItem));
+        } else {
+          await _handleShufflePlayWithQueue(context);
+        }
         break;
       case 'show_link':
         if (mounted) await showItemLinkDialog(this.context, mediaItem);
@@ -1730,6 +1736,13 @@ class MediaContextMenuState extends State<MediaContextMenu> {
         },
         onEmpty: () => showErrorSnackBar(context, t.messages.failedToCreatePlayQueueNoItems),
       );
+      return;
+    }
+
+    // A photo collection shuffles into a slideshow of its photos.
+    final item = widget.item;
+    if (shuffle && item is MediaItem && PhotoShuffleLauncher.isPhotoCollection(item)) {
+      await PhotoShuffleLauncher.start(context, PhotoShuffleCollection(item));
       return;
     }
 

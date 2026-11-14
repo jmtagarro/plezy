@@ -507,6 +507,7 @@
     "photos": "",
     "photoClipAutoplay": "",
     "photoClipAutoplayDescription": "",
+    "photoSlideshowDuration": "",
     "controls": "Vezérlők",
     "rememberPlayerChanges": "Lejátszó módosításainak megjegyzése",
     "rememberPlayerChangesDescription": "A lejátszás közben végzett módosítások mentési és újbóli alkalmazási helye",
@@ -812,7 +813,8 @@
     "markAsWatched": "Megjelölés megtekintettként",
     "markAsUnwatched": "Megjelölés nem megtekintettként",
     "previousPhoto": "",
-    "nextPhoto": ""
+    "nextPhoto": "",
+    "slideshowPaused": ""
   },
   "audioTracks": {
     "track": "${n}. hangsáv"

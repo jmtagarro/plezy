@@ -24,6 +24,8 @@ import 'package:plezy/services/download_storage_service.dart';
 import 'package:plezy/services/jellyfin_api_cache.dart';
 import 'package:plezy/services/multi_server_manager.dart';
 import 'package:plezy/services/plex_api_cache.dart';
+import 'package:plezy/services/photo_shuffle/photo_shuffle_launcher.dart';
+import 'package:plezy/services/photo_shuffle/photo_shuffle_source.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/services/device_performance.dart';
 import 'package:plezy/theme/mono_theme.dart';
@@ -136,6 +138,35 @@ void main() {
     // The grid sits below the header, not beside or over it.
     final headerBottom = tester.getBottomLeft(find.byType(FocusableActionBar)).dy;
     expect(tester.getTopLeft(find.byType(FocusableMediaCard).first).dy, greaterThan(headerBottom));
+  });
+
+  testWidgets('Shuffle on a collection of photos starts a slideshow of it', (tester) async {
+    final started = <PhotoShuffleTarget>[];
+    PhotoShuffleLauncher.debugStartOverride = (_, target) async => started.add(target);
+    addTearDown(() => PhotoShuffleLauncher.debugStartOverride = null);
+    final photos = MediaItem(
+      id: 'collection_3',
+      backend: MediaBackend.plex,
+      kind: MediaKind.collection,
+      title: 'Holidays',
+      libraryId: 'photos',
+      serverId: 'server_1',
+    );
+    final harness = await _createHarness([
+      testMediaItem(id: 'photo_1', kind: MediaKind.photo, title: 'Beach', serverId: 'server_1'),
+    ]);
+
+    await tester.pumpWidget(
+      harness.wrap(SizedBox(width: 1280, height: 720, child: CollectionDetailScreen(collection: photos))),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Shuffle'));
+    await tester.pumpAndSettle();
+
+    expect(
+      started.single,
+      isA<PhotoShuffleCollection>().having((target) => target.collection.id, 'id', 'collection_3'),
+    );
   });
 
   testWidgets('year span waits for every page so a partial load never reports a narrower range', (tester) async {

@@ -507,6 +507,7 @@
     "photos": "",
     "photoClipAutoplay": "",
     "photoClipAutoplayDescription": "",
+    "photoSlideshowDuration": "",
     "controls": "Boshqaruv elementlari",
     "rememberPlayerChanges": "Pleyer oʻzgarishlarini eslab qolish",
     "rememberPlayerChangesDescription": "Ijro vaqtida qilingan oʻzgarish qayerda saqlanishi va qayta qoʻllanishi",
@@ -812,7 +813,8 @@
     "markAsWatched": "Koʻrilgan deb belgilash",
     "markAsUnwatched": "Koʻrilmagan deb belgilash",
     "previousPhoto": "",
-    "nextPhoto": ""
+    "nextPhoto": "",
+    "slideshowPaused": ""
   },
   "audioTracks": {
     "track": "Audio yoʻlak ${n}"

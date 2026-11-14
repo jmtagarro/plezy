@@ -5,6 +5,9 @@ import '../../media/media_item.dart';
 class PlayQueueResponse {
   final int playQueueID;
   final int? playQueueSelectedItemID;
+
+  /// Position of the selected item in the whole queue.
+  final int? playQueueSelectedItemOffset;
   final bool playQueueShuffled;
   final int? playQueueTotalCount;
   final int? size; // Number of items in this response window
@@ -13,6 +16,7 @@ class PlayQueueResponse {
   PlayQueueResponse({
     required this.playQueueID,
     this.playQueueSelectedItemID,
+    this.playQueueSelectedItemOffset,
     required this.playQueueShuffled,
     required this.playQueueTotalCount,
     this.size,

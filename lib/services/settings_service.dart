@@ -824,6 +824,14 @@ class SettingsService extends BaseSharedPreferencesService {
   /// tapped, or shortly after the viewer moves to them.
   static const photoClipAutoplay = BoolPref('photo_clip_autoplay', defaultValue: true);
 
+  /// Seconds a photo slideshow shows each photo, one of [photoSlideshowChoices].
+  static final photoSlideshowSeconds = IntPref(
+    'photo_slideshow_seconds',
+    defaultValue: 5,
+    transform: (v) => photoSlideshowChoices.reduce((a, b) => (v - a).abs() <= (v - b).abs() ? a : b),
+  );
+  static const photoSlideshowChoices = [3, 5, 10, 20, 30];
+
   /// Remember the brightness level set by the swipe gesture (#2178). When on,
   /// playback starts at [rememberedBrightnessLevel] instead of the system
   /// level; the player exit still restores the pre-playback brightness.
@@ -1537,6 +1545,7 @@ class SettingsService extends BaseSharedPreferencesService {
     gesturePinchToZoom,
     rememberBrightnessLevel,
     photoClipAutoplay,
+    photoSlideshowSeconds,
     directPlayCoveredQuality,
     deinterlaceMode,
     playerAlwaysOnTop,
@@ -1678,6 +1687,7 @@ class SettingsService extends BaseSharedPreferencesService {
     'sleep_timer_duration' => (5, 240),
     'play_next_countdown' => (0, 30),
     'auto_skip_delay' => (1, 30),
+    'photo_slideshow_seconds' => (3, 30),
     'subtitle_font_size' => (10, 80),
     'subtitle_border_size' => (0, 5),
     'subtitle_position' => (0, 150),

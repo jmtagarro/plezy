@@ -507,6 +507,7 @@
     "photos": "",
     "photoClipAutoplay": "",
     "photoClipAutoplayDescription": "",
+    "photoSlideshowDuration": "",
     "controls": "Kontroller",
     "rememberPlayerChanges": "Oynatıcı değişikliklerini hatırla",
     "rememberPlayerChangesDescription": "Oynatma sırasında yapılan değişikliklerin kaydedilip yeniden uygulanacağı yer",
@@ -812,7 +813,8 @@
     "markAsWatched": "İzlendi olarak işaretle",
     "markAsUnwatched": "İzlenmedi olarak işaretle",
     "previousPhoto": "",
-    "nextPhoto": ""
+    "nextPhoto": "",
+    "slideshowPaused": ""
   },
   "audioTracks": {
     "track": "Ses Parçası ${n}"

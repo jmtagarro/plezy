@@ -1466,6 +1466,9 @@ class Translations$settings$en {
 	/// en: 'Play a clip in an album or photo library as soon as you open or move to it'
 	String get photoClipAutoplayDescription => 'Play a clip in an album or photo library as soon as you open or move to it';
 
+	/// en: 'Slideshow Photo Duration'
+	String get photoSlideshowDuration => 'Slideshow Photo Duration';
+
 	/// en: 'Controls'
 	String get controls => 'Controls';
 
@@ -2263,6 +2266,9 @@ class Translations$tooltips$en {
 
 	/// en: 'Next photo'
 	String get nextPhoto => 'Next photo';
+
+	/// en: 'Slideshow paused'
+	String get slideshowPaused => 'Slideshow paused';
 }
 
 // Path: audioTracks
@@ -8622,6 +8628,7 @@ extension on Translations {
 			'settings.photos' => 'Photos',
 			'settings.photoClipAutoplay' => 'Play Clips Automatically',
 			'settings.photoClipAutoplayDescription' => 'Play a clip in an album or photo library as soon as you open or move to it',
+			'settings.photoSlideshowDuration' => 'Slideshow Photo Duration',
 			'settings.controls' => 'Controls',
 			'settings.rememberPlayerChanges' => 'Remember Player Changes',
 			'settings.rememberPlayerChangesDescription' => 'Where a change made during playback is saved and reapplied from',
@@ -8648,9 +8655,9 @@ extension on Translations {
 			'themeEditor.startFromDescription' => 'Copy all colors from another theme',
 			'themeEditor.colors' => 'Colors',
 			'themeEditor.preview' => 'Preview',
-			'themeEditor.slots.bg' => 'Background',
 			_ => null,
 		} ?? switch (path) {
+			'themeEditor.slots.bg' => 'Background',
 			'themeEditor.slots.surface' => 'Surface',
 			'themeEditor.slots.outline' => 'Outline',
 			'themeEditor.slots.text' => 'Text',
@@ -8899,6 +8906,7 @@ extension on Translations {
 			'tooltips.markAsUnwatched' => 'Mark as unwatched',
 			'tooltips.previousPhoto' => 'Previous photo',
 			'tooltips.nextPhoto' => 'Next photo',
+			'tooltips.slideshowPaused' => 'Slideshow paused',
 			'audioTracks.track' => ({required Object n}) => 'Audio Track ${n}',
 			'videoControls.audioLabel' => 'Audio',
 			'videoControls.subtitlesLabel' => 'Subtitles',
@@ -9161,10 +9169,10 @@ extension on Translations {
 			'profiles.borrowFailed' => 'Failed to borrow connection.',
 			'profiles.incorrectPin' => 'Incorrect PIN.',
 			'profiles.incorrectPinTryAgain' => 'Incorrect PIN. Please try again.',
-			'profiles.sourceProfileMissingParentAccount' => 'Source profile is missing its parent account.',
-			'profiles.failedToLoadHomeUsers' => 'Could not load your Plex Home users. Check your connection and try again.',
 			_ => null,
 		} ?? switch (path) {
+			'profiles.sourceProfileMissingParentAccount' => 'Source profile is missing its parent account.',
+			'profiles.failedToLoadHomeUsers' => 'Could not load your Plex Home users. Check your connection and try again.',
 			'profiles.failedToVerifyPin' => 'Failed to verify PIN.',
 			'profiles.newProfile' => 'New profile',
 			'profiles.profileNameHint' => 'e.g. Guests, Kids, Family Room',
@@ -9675,10 +9683,10 @@ extension on Translations {
 			'liveTv.recordingRuleDeleted' => 'Recording rule deleted',
 			'liveTv.processRecordingRules' => 'Re-evaluate rules',
 			'liveTv.recordingInProgress' => 'Recording now',
-			'liveTv.recordingsCount' => ({required Object count}) => '${count} scheduled',
-			'liveTv.editRule' => 'Edit rule',
 			_ => null,
 		} ?? switch (path) {
+			'liveTv.recordingsCount' => ({required Object count}) => '${count} scheduled',
+			'liveTv.editRule' => 'Edit rule',
 			'liveTv.editRuleAction' => 'Edit',
 			'liveTv.recordingRuleUpdated' => 'Recording rule updated',
 			'liveTv.guideReloadRequested' => 'Guide refresh requested',
@@ -10189,10 +10197,10 @@ extension on Translations {
 			'performanceOverlay.dvRpuAverage' => 'DV RPU Avg',
 			'performanceOverlay.dvSampleAverage' => 'DV Sample Avg',
 			'performanceOverlay.maxLuma' => 'Max Luma',
-			'performanceOverlay.minLuma' => 'Min Luma',
-			'performanceOverlay.maxCll' => 'MaxCLL',
 			_ => null,
 		} ?? switch (path) {
+			'performanceOverlay.minLuma' => 'Min Luma',
+			'performanceOverlay.maxCll' => 'MaxCLL',
 			'performanceOverlay.maxFall' => 'MaxFALL',
 			'performanceOverlay.cacheUsed' => 'Cache Used',
 			'performanceOverlay.cacheLimit' => 'Cache Limit',

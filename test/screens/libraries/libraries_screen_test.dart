@@ -33,6 +33,8 @@ import 'package:plezy/screens/libraries/tabs/library_browse_tab.dart';
 import 'package:plezy/screens/libraries/tabs/library_recommended_tab.dart';
 import 'package:plezy/screens/libraries/tabs/base_library_tab.dart';
 import 'package:plezy/services/multi_server_manager.dart';
+import 'package:plezy/services/photo_shuffle/photo_shuffle_launcher.dart';
+import 'package:plezy/services/photo_shuffle/photo_shuffle_source.dart';
 import 'package:plezy/services/library_events/library_event_service.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/services/storage_service.dart';
@@ -95,6 +97,14 @@ const _jellyfinMovies = MediaLibrary(
   title: 'Movies',
   kind: MediaKind.movie,
   serverId: 'server-c',
+);
+
+const _photoLibrary = MediaLibrary(
+  id: 'photos',
+  backend: MediaBackend.plex,
+  title: 'Photos',
+  kind: MediaKind.photo,
+  serverId: 'server',
 );
 
 void main() {
@@ -168,6 +178,23 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(selected, [_libraryA.globalKey]);
+  });
+
+  testWidgets('the toolbar shuffles a photo library into a slideshow', (tester) async {
+    final started = <PhotoShuffleTarget>[];
+    PhotoShuffleLauncher.debugStartOverride = (_, target) async => started.add(target);
+    addTearDown(() => PhotoShuffleLauncher.debugStartOverride = null);
+    final harness = await _Harness.create(
+      _GatedPreferences({'selected_library_key': _photoLibrary.globalKey}),
+      libraryOrder: const [_photoLibrary, _libraryA],
+    );
+    addTearDown(harness.dispose);
+
+    await harness.pump(tester);
+    await tester.tap(find.byTooltip(t.libraries.shuffleLibrary));
+    await tester.pumpAndSettle();
+
+    expect(started.single, isA<PhotoShuffleLibrary>().having((target) => target.library.id, 'library', 'photos'));
   });
 
   testWidgets('stale saved tab cannot replace the current library tab', (tester) async {

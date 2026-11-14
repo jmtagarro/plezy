@@ -14,6 +14,8 @@ import '../../utils/media_navigation_helper.dart';
 import '../../utils/provider_extensions.dart';
 import '../../utils/snackbar_helper.dart';
 import '../../i18n/strings.g.dart';
+import '../../services/photo_shuffle/photo_shuffle_launcher.dart';
+import '../../services/photo_shuffle/photo_shuffle_source.dart';
 import 'folder_tree_item.dart';
 import 'state_messages.dart';
 
@@ -268,6 +270,10 @@ class FolderTreeViewState extends State<FolderTreeView> {
   /// tree is pinned to one server: the Plex client must be the one backing
   /// [widget.serverId], not `forItem`'s fall-back-to-any-online resolution.
   Future<void> _launchFolder(MediaItem folder, {required bool shuffle}) async {
+    // A photo library's folders shuffle into a slideshow of what they hold.
+    if (shuffle && widget.libraryKind == MediaKind.photo) {
+      return PhotoShuffleLauncher.start(context, PhotoShuffleFolder(folder, libraryId: widget.libraryKey));
+    }
     final MediaListPlaybackLauncher launcher;
     if (folder.backend.usesMediaBrowserApi) {
       launcher = JellyfinSequentialLauncher(context: context);

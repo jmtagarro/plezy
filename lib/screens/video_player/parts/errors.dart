@@ -146,10 +146,24 @@ extension _VideoPlayerErrorMethods on VideoPlayerScreenState {
       _playbackFailureRetry = _retryFailedPlayback;
     });
     _focusFailureActionAfterBuild();
+    _leaveSequenceAfterFailure();
+  }
+
+  /// A slideshow moves on from a clip that cannot play: the failure shows for
+  /// a moment, then the player closes and reports it to the sequence.
+  void _leaveSequenceAfterFailure() {
+    final link = widget.sequenceLink;
+    if (link == null || !link.leavesOnFailure) return;
+    link.markFailed();
+    Timer(PlayerSequenceLink.failureNoticeDuration, () {
+      if (!mounted || _shuttingDown || _playbackFailureMessage == null) return;
+      unawaited(_handleBackButton());
+    });
   }
 
   void _dismissPlaybackFailure() {
     if (_playbackFailureMessage == null) return;
+    widget.sequenceLink?.clearFailed();
     _setPlayerState(() {
       _playbackFailureMessage = null;
       _playbackFailureRetry = null;

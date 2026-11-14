@@ -507,6 +507,7 @@
     "photos": "",
     "photoClipAutoplay": "",
     "photoClipAutoplayDescription": "",
+    "photoSlideshowDuration": "",
     "controls": "Controles",
     "rememberPlayerChanges": "Lembrar alterações do reprodutor",
     "rememberPlayerChangesDescription": "Onde uma alteração feita durante a reprodução é salva e reaplicada",
@@ -812,7 +813,8 @@
     "markAsWatched": "Marcar como assistido",
     "markAsUnwatched": "Marcar como não assistido",
     "previousPhoto": "",
-    "nextPhoto": ""
+    "nextPhoto": "",
+    "slideshowPaused": ""
   },
   "audioTracks": {
     "track": "Faixa de áudio ${n}"

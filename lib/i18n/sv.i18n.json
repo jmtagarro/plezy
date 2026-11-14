@@ -507,6 +507,7 @@
     "photos": "",
     "photoClipAutoplay": "",
     "photoClipAutoplayDescription": "",
+    "photoSlideshowDuration": "",
     "controls": "Kontroller",
     "rememberPlayerChanges": "Kom ihåg spelarändringar",
     "rememberPlayerChangesDescription": "Var en ändring under uppspelning sparas och tillämpas igen",
@@ -812,7 +813,8 @@
     "markAsWatched": "Markera som sedd",
     "markAsUnwatched": "Markera som osedd",
     "previousPhoto": "",
-    "nextPhoto": ""
+    "nextPhoto": "",
+    "slideshowPaused": ""
   },
   "audioTracks": {
     "track": "Ljudspår ${n}"

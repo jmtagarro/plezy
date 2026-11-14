@@ -5,6 +5,24 @@ import 'package:plezy/screens/video_player/wakelock_controller.dart';
 
 void main() {
   group('WakelockController', () {
+    test('stays on while any owner holds it, so a late release by one keeps another\'s hold', () async {
+      final calls = <bool>[];
+      final controller = WakelockController(platformToggle: (enabled) async => calls.add(enabled));
+      final slideshow = Object();
+
+      await controller.setEnabled(true, owner: slideshow);
+      // A clip's player over the slideshow takes it and lets go as it closes.
+      await controller.setEnabled(true);
+      await controller.setEnabled(false);
+      expect(calls, [true]);
+      expect(controller.isHeld, isTrue);
+      expect(controller.isHeldBy(slideshow), isTrue);
+
+      await controller.setEnabled(false, owner: slideshow);
+      expect(calls, [true, false]);
+      expect(controller.isHeld, isFalse);
+    });
+
     test('drains enable then disable without overlapping platform work', () async {
       final platform = _ControlledPlatformToggle();
       final controller = WakelockController(platformToggle: platform.call);

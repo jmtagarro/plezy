@@ -507,6 +507,7 @@
     "photos": "",
     "photoClipAutoplay": "",
     "photoClipAutoplayDescription": "",
+    "photoSlideshowDuration": "",
     "controls": "컨트롤",
     "rememberPlayerChanges": "플레이어 변경 사항 기억",
     "rememberPlayerChangesDescription": "재생 중 변경한 사항을 저장하고 다시 적용할 위치",
@@ -809,7 +810,8 @@
     "markAsWatched": "시청 완료로 표시",
     "markAsUnwatched": "미시청으로 표시",
     "previousPhoto": "",
-    "nextPhoto": ""
+    "nextPhoto": "",
+    "slideshowPaused": ""
   },
   "audioTracks": {
     "track": "오디오 트랙 ${n}"

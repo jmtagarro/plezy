@@ -507,6 +507,7 @@
     "photos": "",
     "photoClipAutoplay": "",
     "photoClipAutoplayDescription": "",
+    "photoSlideshowDuration": "",
     "controls": "Контроли",
     "rememberPlayerChanges": "Запомняне на промените в плейъра",
     "rememberPlayerChangesDescription": "Къде се записва и откъде се прилага отново промяна, направена по време на възпроизвеждане",
@@ -812,7 +813,8 @@
     "markAsWatched": "Маркирай като гледано",
     "markAsUnwatched": "Маркирай като негледано",
     "previousPhoto": "",
-    "nextPhoto": ""
+    "nextPhoto": "",
+    "slideshowPaused": ""
   },
   "audioTracks": {
     "track": "Аудиопътечка ${n}"

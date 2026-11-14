@@ -154,7 +154,9 @@ part 'video_player/parts/seeking.dart';
 part 'video_player/parts/build.dart';
 part 'video_player/parts/watch_together.dart';
 
-final WakelockController _wakelockController = WakelockController();
+// Shared with the photo slideshow, which holds it as its own owner while a
+// clip plays over it.
+final WakelockController _wakelockController = WakelockController.shared;
 
 /// Property names the free-form mpv config is not allowed to write.
 ///

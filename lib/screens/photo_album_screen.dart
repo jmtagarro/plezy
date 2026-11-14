@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import '../focus/focusable_action_bar.dart';
 import '../focus/input_mode_tracker.dart';
 import '../i18n/strings.g.dart';
@@ -7,6 +10,8 @@ import '../media/media_item.dart';
 import '../mixins/grid_focus_node_mixin.dart';
 import '../mixins/paginated_item_loader.dart';
 import '../mixins/standard_paginated_view.dart';
+import '../services/photo_shuffle/photo_shuffle_launcher.dart';
+import '../services/photo_shuffle/photo_shuffle_source.dart';
 import '../utils/app_logger.dart';
 import '../utils/error_message_utils.dart';
 import '../utils/media_navigation_helper.dart';
@@ -73,7 +78,14 @@ class _PhotoAlbumScreenState extends BaseMediaListDetailScreen<PhotoAlbumScreen>
   }
 
   @override
-  List<FocusableAction> getAppBarActions() => const [];
+  List<FocusableAction> getAppBarActions() => [
+    if (hasItems)
+      FocusableAction(
+        icon: Symbols.shuffle_rounded,
+        tooltip: t.common.shuffle,
+        onPressed: () => unawaited(PhotoShuffleLauncher.start(context, PhotoShuffleAlbum(widget.album))),
+      ),
+  ];
 
   /// Photos and clips open in a viewer that moves through them. Nested albums
   /// open the way their cards do.
