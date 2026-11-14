@@ -509,6 +509,19 @@ void main() {
     expect(FocusManager.instance.primaryFocus, _cardFor(tester, 'B').focusNode);
   });
 
+  testWidgets('a clip at the root of a photo library plays at once, over the viewer on it', (tester) async {
+    final played = <String>[];
+    PhotoSequenceViewer.debugPlayClipOverride = (_, clip) async => played.add(clip.id);
+    addTearDown(() => PhotoSequenceViewer.debugPlayClipOverride = null);
+    await pumpLibraryRoot(tester, [_photoLibraryItem('a', MediaKind.photo), _photoLibraryItem('v', MediaKind.clip)]);
+
+    _cardFor(tester, 'V').onTap!();
+    await tester.pumpAndSettle();
+
+    expect(played, ['v']);
+    expect(tester.widget<PhotoViewerScreen>(find.byType(PhotoViewerScreen)).photo.id, 'v');
+  });
+
   testWidgets('outside a photo library, a clip keeps playing straight from its card', (tester) async {
     await pumpLibraryRoot(tester, [
       _photoLibraryItem('v', MediaKind.clip),

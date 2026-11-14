@@ -2321,7 +2321,7 @@ class _LibraryBrowseTabState extends BaseLibraryTabState<MediaItem, LibraryBrows
       itemAt: (i) => loadedItems[i],
       loadItemAt: (i) => loadItemAt(i, pageSize: _activeFetchSize),
     );
-    await openPhotoSequence(context, sequence);
+    await openPhotoSequence(context, sequence, autoplayInitialClip: true);
     if (mounted && sequence.index != index) _revealPhoto(sequence.index);
   }
 

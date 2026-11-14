@@ -820,6 +820,10 @@ class SettingsService extends BaseSharedPreferencesService {
   static const gestureVolumeSwipe = BoolPref('gesture_volume_swipe', defaultValue: true);
   static const gesturePinchToZoom = BoolPref('gesture_pinch_to_zoom', defaultValue: true);
 
+  /// Clips in a photo album or library start in the player when their card is
+  /// tapped, or shortly after the viewer moves to them.
+  static const photoClipAutoplay = BoolPref('photo_clip_autoplay', defaultValue: true);
+
   /// Remember the brightness level set by the swipe gesture (#2178). When on,
   /// playback starts at [rememberedBrightnessLevel] instead of the system
   /// level; the player exit still restores the pre-playback brightness.
@@ -1532,6 +1536,7 @@ class SettingsService extends BaseSharedPreferencesService {
     gestureVolumeSwipe,
     gesturePinchToZoom,
     rememberBrightnessLevel,
+    photoClipAutoplay,
     directPlayCoveredQuality,
     deinterlaceMode,
     playerAlwaysOnTop,

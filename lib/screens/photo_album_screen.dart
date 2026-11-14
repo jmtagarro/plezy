@@ -91,7 +91,7 @@ class _PhotoAlbumScreenState extends BaseMediaListDetailScreen<PhotoAlbumScreen>
       itemAt: (i) => loadedItems[i],
       loadItemAt: (i) => loadItemAt(i, pageSize: _pageSize),
     );
-    await openPhotoSequence(context, sequence);
+    await openPhotoSequence(context, sequence, autoplayInitialClip: true);
     if (mounted && sequence.index != index) _revealItem(sequence.index);
   }
 

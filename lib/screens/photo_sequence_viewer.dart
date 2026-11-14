@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
+
+import '../focus/dpad_navigator.dart';
 
 import '../i18n/strings.g.dart';
 import '../media/ids.dart';
@@ -10,6 +13,7 @@ import '../media/media_item.dart';
 import '../media/media_item_types.dart';
 import '../media/media_kind.dart';
 import '../services/device_performance.dart';
+import '../services/settings_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/platform_detector.dart';
 import '../utils/provider_extensions.dart';
@@ -66,9 +70,16 @@ class PhotoSequence {
   }
 }
 
-/// Opens the viewer on the photo [sequence] stands on.
-Future<void> openPhotoSequence(BuildContext context, PhotoSequence sequence) {
-  return Navigator.push<void>(context, MaterialPageRoute(builder: (_) => PhotoSequenceViewer(sequence: sequence)));
+/// Opens the viewer on the photo [sequence] stands on. [autoplayInitialClip]
+/// plays it at once when it is a clip and clips play automatically, as for a
+/// tap on its card.
+Future<void> openPhotoSequence(BuildContext context, PhotoSequence sequence, {bool autoplayInitialClip = false}) {
+  return Navigator.push<void>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => PhotoSequenceViewer(sequence: sequence, autoplayInitialClip: autoplayInitialClip),
+    ),
+  );
 }
 
 /// What the viewer of one photo needs from the sequence around it.
@@ -116,7 +127,20 @@ class PhotoSequenceViewer extends StatefulWidget {
   @visibleForTesting
   final Future<void> Function(BuildContext context, MediaItem clip)? playClip;
 
-  const PhotoSequenceViewer({super.key, required this.sequence, this.playClip});
+  /// Plays the clip the viewer opens on at once, when clips play
+  /// automatically.
+  final bool autoplayInitialClip;
+
+  const PhotoSequenceViewer({super.key, required this.sequence, this.playClip, this.autoplayInitialClip = false});
+
+  /// How long the viewer stays on a clip it moved to before playing it, so
+  /// clips passed on the way to another item do not start.
+  static const clipAutoplayDelay = Duration(milliseconds: 500);
+
+  /// Replaces the player for viewers opened from a grid, which pass no
+  /// [playClip].
+  @visibleForTesting
+  static Future<void> Function(BuildContext context, MediaItem clip)? debugPlayClipOverride;
 
   @override
   State<PhotoSequenceViewer> createState() => _PhotoSequenceViewerState();
@@ -147,10 +171,24 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
   /// they drop out of it or when the viewer closes.
   final Map<String, ImageProvider> _window = {};
 
+  /// Plays the clip moved to once the viewer has stayed on it for
+  /// [PhotoSequenceViewer.clipAutoplayDelay].
+  Timer? _clipAutoplay;
+
+  /// The clip whose autoplay waits for the arrow key still held down.
+  String? _clipAutoplayAfterKeyUp;
+
   @override
   void initState() {
     super.initState();
     _resolveNeighbours();
+    HardwareKeyboard.instance.addHandler(_handleHardwareKey);
+    if (widget.autoplayInitialClip && _clipsAutoplay && _sequence.photo.kind == MediaKind.clip) {
+      final clip = _sequence.photo;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _sequence.photo.globalKey == clip.globalKey) unawaited(_play(clip));
+      });
+    }
   }
 
   @override
@@ -164,6 +202,8 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
 
   @override
   void dispose() {
+    _clipAutoplay?.cancel();
+    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     for (final image in _window.values) {
       unawaited(image.evict());
     }
@@ -215,6 +255,7 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
           ..photo = entry.photo;
         _direction = step;
       });
+      _scheduleClipAutoplay();
       // Before the frame that replaces the viewer, so the one leaving keeps the
       // image of the photo it showed, which is now next to the current one.
       _resolveNeighbours(previous: step > 0 ? left : null, next: step < 0 ? left : null);
@@ -263,11 +304,54 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
 
   bool _keepsImage(String url) => _window.containsKey(url);
 
+  static bool get _clipsAutoplay =>
+      SettingsService.instanceOrNull?.read(SettingsService.photoClipAutoplay) ??
+      SettingsService.photoClipAutoplay.defaultValue;
+
+  /// Arms the autoplay of the clip just moved to. Every move rearms it, so a
+  /// clip passed within the delay never plays. Coming back from the player
+  /// does not rearm it, so the clip does not play again until the viewer
+  /// moves back to it.
+  void _scheduleClipAutoplay() {
+    _clipAutoplay?.cancel();
+    _clipAutoplay = null;
+    _clipAutoplayAfterKeyUp = null;
+    final clip = _sequence.photo;
+    if (clip.kind != MediaKind.clip || !_clipsAutoplay) return;
+    _clipAutoplay = Timer(PhotoSequenceViewer.clipAutoplayDelay, () => _autoplayClip(clip));
+  }
+
+  void _autoplayClip(MediaItem clip) {
+    _clipAutoplay = null;
+    if (!mounted || _sequence.photo.globalKey != clip.globalKey) return;
+    if (ModalRoute.of(context)?.isCurrent == false) return;
+    // An arrow key held down is on its way somewhere else.
+    if (HardwareKeyboard.instance.logicalKeysPressed.any((key) => key.isDpadDirection)) {
+      _clipAutoplayAfterKeyUp = clip.globalKey;
+      return;
+    }
+    unawaited(_play(clip));
+  }
+
+  bool _handleHardwareKey(KeyEvent event) {
+    if (event is KeyUpEvent &&
+        _clipAutoplayAfterKeyUp == _sequence.photo.globalKey &&
+        !HardwareKeyboard.instance.logicalKeysPressed.any((key) => key.isDpadDirection)) {
+      _clipAutoplayAfterKeyUp = null;
+      final clip = _sequence.photo;
+      _clipAutoplay = Timer(PhotoSequenceViewer.clipAutoplayDelay, () => _autoplayClip(clip));
+    }
+    return false;
+  }
+
   /// Plays [clip] in the player, and stays on its page for when the player
   /// closes or the clip ends.
   Future<void> _play(MediaItem clip) async {
+    _clipAutoplay?.cancel();
+    _clipAutoplay = null;
+    _clipAutoplayAfterKeyUp = null;
     try {
-      final playClip = widget.playClip;
+      final playClip = widget.playClip ?? PhotoSequenceViewer.debugPlayClipOverride;
       if (playClip != null) return await playClip(context, clip);
       await navigateToVideoPlayer(context, metadata: clip);
     } catch (error, stackTrace) {

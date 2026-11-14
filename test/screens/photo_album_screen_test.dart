@@ -177,7 +177,37 @@ void main() {
       expect(shownPhoto(tester), 'c');
     });
 
-    testWidgets('a clip card opens the viewer on the clip', (tester) async {
+    testWidgets('a clip card plays the clip at once, and closing the player leaves the viewer on it', (tester) async {
+      final played = <String>[];
+      PhotoSequenceViewer.debugPlayClipOverride = (_, clip) async => played.add(clip.id);
+      addTearDown(() => PhotoSequenceViewer.debugPlayClipOverride = null);
+      await tester.pumpWidget(
+        await wrap(
+          PhotoAlbumScreen(album: _album),
+          clients: [
+            _AlbumClient({'album': children}),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Waves'));
+      await tester.pumpAndSettle();
+
+      expect(played, ['clip']);
+      expect(shownPhoto(tester), 'clip');
+      expect(find.byTooltip(t.common.play), findsOneWidget);
+      // Staying on the clip once the player has closed does not play it again.
+      await tester.pump(const Duration(seconds: 2));
+      expect(played, ['clip']);
+    });
+
+    testWidgets('with clips not playing automatically, a clip card opens the viewer on the clip', (tester) async {
+      final played = <String>[];
+      PhotoSequenceViewer.debugPlayClipOverride = (_, clip) async => played.add(clip.id);
+      addTearDown(() => PhotoSequenceViewer.debugPlayClipOverride = null);
+      await SettingsService.getInstance();
+      await SettingsService.instance.write(SettingsService.photoClipAutoplay, false);
       await tester.pumpWidget(
         await wrap(
           PhotoAlbumScreen(album: _album),
@@ -193,6 +223,8 @@ void main() {
 
       expect(shownPhoto(tester), 'clip');
       expect(find.byTooltip(t.common.play), findsOneWidget);
+      await tester.pump(const Duration(seconds: 2));
+      expect(played, isEmpty);
     });
 
     testWidgets('a nested album still opens as its card does, not in the viewer', (tester) async {

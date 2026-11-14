@@ -148,6 +148,7 @@ class PlaybackSettingsScreen extends StatelessWidget {
             _behaviorGroup(context, isMobile),
             if (isMobile) _gesturesGroup(),
             _rememberPlayerChangesGroup(),
+            _photosGroup(),
             const SizedBox(height: 24),
           ],
         );
@@ -420,6 +421,19 @@ class PlaybackSettingsScreen extends StatelessWidget {
         icon: Symbols.pinch_rounded,
         title: t.settings.gesturePinchToZoom,
         subtitle: t.settings.gesturePinchToZoomDescription,
+      ),
+    ],
+  );
+
+  /// How albums and photo libraries show their clips and photos.
+  Widget _photosGroup() => SettingsGroup(
+    title: t.settings.photos,
+    children: [
+      SettingSwitchTile(
+        pref: SettingsService.photoClipAutoplay,
+        icon: Symbols.play_circle_rounded,
+        title: t.settings.photoClipAutoplay,
+        subtitle: t.settings.photoClipAutoplayDescription,
       ),
     ],
   );

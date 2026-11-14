@@ -1457,6 +1457,15 @@ class Translations$settings$en {
 	/// en: 'Start playback at the brightness set by the last swipe'
 	String get rememberBrightnessLevelDescription => 'Start playback at the brightness set by the last swipe';
 
+	/// en: 'Photos'
+	String get photos => 'Photos';
+
+	/// en: 'Play Clips Automatically'
+	String get photoClipAutoplay => 'Play Clips Automatically';
+
+	/// en: 'Play a clip in an album or photo library as soon as you open or move to it'
+	String get photoClipAutoplayDescription => 'Play a clip in an album or photo library as soon as you open or move to it';
+
 	/// en: 'Controls'
 	String get controls => 'Controls';
 
@@ -8610,6 +8619,9 @@ extension on Translations {
 			'settings.gesturePinchToZoomDescription' => 'Pinch on the video to zoom in or out',
 			'settings.rememberBrightnessLevel' => 'Remember Brightness Level',
 			'settings.rememberBrightnessLevelDescription' => 'Start playback at the brightness set by the last swipe',
+			'settings.photos' => 'Photos',
+			'settings.photoClipAutoplay' => 'Play Clips Automatically',
+			'settings.photoClipAutoplayDescription' => 'Play a clip in an album or photo library as soon as you open or move to it',
 			'settings.controls' => 'Controls',
 			'settings.rememberPlayerChanges' => 'Remember Player Changes',
 			'settings.rememberPlayerChangesDescription' => 'Where a change made during playback is saved and reapplied from',
@@ -8637,11 +8649,11 @@ extension on Translations {
 			'themeEditor.colors' => 'Colors',
 			'themeEditor.preview' => 'Preview',
 			'themeEditor.slots.bg' => 'Background',
+			_ => null,
+		} ?? switch (path) {
 			'themeEditor.slots.surface' => 'Surface',
 			'themeEditor.slots.outline' => 'Outline',
 			'themeEditor.slots.text' => 'Text',
-			_ => null,
-		} ?? switch (path) {
 			'themeEditor.slots.textMuted' => 'Secondary text',
 			'themeEditor.slots.accent' => 'Accent',
 			'themeEditor.opacity' => 'Opacity',
@@ -9151,11 +9163,11 @@ extension on Translations {
 			'profiles.incorrectPinTryAgain' => 'Incorrect PIN. Please try again.',
 			'profiles.sourceProfileMissingParentAccount' => 'Source profile is missing its parent account.',
 			'profiles.failedToLoadHomeUsers' => 'Could not load your Plex Home users. Check your connection and try again.',
+			_ => null,
+		} ?? switch (path) {
 			'profiles.failedToVerifyPin' => 'Failed to verify PIN.',
 			'profiles.newProfile' => 'New profile',
 			'profiles.profileNameHint' => 'e.g. Guests, Kids, Family Room',
-			_ => null,
-		} ?? switch (path) {
 			'profiles.pinProtectionOptional' => 'PIN protection (optional)',
 			'profiles.pinExplain' => '4-digit PIN required to switch profiles.',
 			'profiles.continueButton' => 'Continue',
@@ -9665,11 +9677,11 @@ extension on Translations {
 			'liveTv.recordingInProgress' => 'Recording now',
 			'liveTv.recordingsCount' => ({required Object count}) => '${count} scheduled',
 			'liveTv.editRule' => 'Edit rule',
+			_ => null,
+		} ?? switch (path) {
 			'liveTv.editRuleAction' => 'Edit',
 			'liveTv.recordingRuleUpdated' => 'Recording rule updated',
 			'liveTv.guideReloadRequested' => 'Guide refresh requested',
-			_ => null,
-		} ?? switch (path) {
 			'liveTv.guideReloadFailed' => 'Couldn\'t refresh the guide',
 			'liveTv.rulesProcessRequested' => 'Rule re-evaluation requested',
 			'liveTv.rulesProcessFailed' => 'Couldn\'t re-evaluate recording rules',
@@ -10179,11 +10191,11 @@ extension on Translations {
 			'performanceOverlay.maxLuma' => 'Max Luma',
 			'performanceOverlay.minLuma' => 'Min Luma',
 			'performanceOverlay.maxCll' => 'MaxCLL',
+			_ => null,
+		} ?? switch (path) {
 			'performanceOverlay.maxFall' => 'MaxFALL',
 			'performanceOverlay.cacheUsed' => 'Cache Used',
 			'performanceOverlay.cacheLimit' => 'Cache Limit',
-			_ => null,
-		} ?? switch (path) {
 			'performanceOverlay.speed' => 'Speed',
 			'performanceOverlay.player' => 'Player',
 			'performanceOverlay.playMethod' => 'Play Method',

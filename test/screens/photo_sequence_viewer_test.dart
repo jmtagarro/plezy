@@ -22,6 +22,7 @@ import 'package:plezy/providers/multi_server_provider.dart';
 import 'package:plezy/screens/photo_sequence_viewer.dart';
 import 'package:plezy/screens/photo_viewer_screen.dart';
 import 'package:plezy/services/device_performance.dart';
+import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/theme/mono_theme.dart';
 import 'package:plezy/utils/immersive_mode_guard.dart';
 import 'package:plezy/utils/orientation_helper.dart';
@@ -30,6 +31,7 @@ import 'package:provider/provider.dart';
 
 import '../test_helpers/media_items.dart';
 import '../test_helpers/multi_server_fixtures.dart';
+import '../test_helpers/prefs.dart';
 
 MediaItem _item(String id, MediaKind kind, {MediaBackend backend = MediaBackend.plex}) =>
     testMediaItem(id: id, backend: backend, kind: kind, title: id, thumbPath: '/thumb/$id', serverId: 'server_1');
@@ -529,7 +531,12 @@ void main() {
         _item(id, MediaKind.clip, backend: backend).copyWith(durationMs: 65000, originallyAvailableAt: '2020-12-24');
     final mixed = [_photo('a'), clip('x'), _item('album', MediaKind.photoAlbum), clip('y'), _photo('b')];
     final played = <String>[];
-    setUp(played.clear);
+    setUp(() async {
+      played.clear();
+      // As before clips played automatically; that has its own group below.
+      resetSharedPreferencesForTest(initialAsync: const {'photo_clip_autoplay': false});
+      await SettingsService.getInstance();
+    });
 
     /// Plays in [_StandInPlayer], which closes on Escape, or when [ends]
     /// completes.
@@ -775,6 +782,161 @@ void main() {
           expect(ImmersiveModeGuard.isOwned, isFalse);
         });
       });
+    });
+  });
+
+  group('clips play automatically', () {
+    MediaItem clip(String id) =>
+        _item(id, MediaKind.clip).copyWith(durationMs: 65000, originallyAvailableAt: '2020-12-24');
+    final items = [_photo('a'), clip('x'), clip('y'), clip('z'), _photo('b'), clip('w')];
+    final played = <String>[];
+    setUp(() async {
+      played.clear();
+      resetSharedPreferencesForTest();
+      await SettingsService.getInstance();
+    });
+
+    Future<void> Function(BuildContext, MediaItem) player({Future<void>? ends}) => (context, item) async {
+      played.add(item.id);
+      await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => _StandInPlayer(ends: ends)));
+    };
+
+    /// Presses [key] and waits [after], without settling, so the autoplay
+    /// timer is only as far along as the test says.
+    Future<void> tap(WidgetTester tester, LogicalKeyboardKey key, {Duration after = Duration.zero}) async {
+      await tester.sendKeyEvent(key);
+      await tester.pump();
+      await tester.pump(after);
+    }
+
+    testWidgets('a clip moved to plays once the viewer has stayed on it for the delay', (tester) async {
+      await open(tester, _sequenceOf(items, 0), playClip: player());
+
+      await tap(tester, LogicalKeyboardKey.arrowRight, after: const Duration(milliseconds: 400));
+      expect(shownTitle(tester), 'x');
+      expect(played, isEmpty);
+
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pumpAndSettle();
+      expect(played, ['x']);
+      expect(find.byType(_StandInPlayer), findsOneWidget);
+    });
+
+    testWidgets('clips passed on the way do not play, the one stopped on does', (tester) async {
+      await open(tester, _sequenceOf(items, 0), playClip: player());
+
+      for (var i = 0; i < 4; i++) {
+        await tap(tester, LogicalKeyboardKey.arrowRight, after: const Duration(milliseconds: 300));
+      }
+      expect(shownTitle(tester), 'b');
+      await tester.pump(const Duration(seconds: 2));
+      expect(played, isEmpty);
+
+      await tap(tester, LogicalKeyboardKey.arrowRight, after: PhotoSequenceViewer.clipAutoplayDelay);
+      await tester.pumpAndSettle();
+      expect(played, ['w']);
+    });
+
+    testWidgets('a swipe or a button counts as a move too', (tester) async {
+      await open(tester, _sequenceOf(items, 0), playClip: player());
+
+      await tester.tap(find.byTooltip('Next photo'));
+      await tester.pump(const Duration(milliseconds: 200));
+      // Below the play button in the middle.
+      await tester.dragFrom(
+        tester.getCenter(find.byType(InteractiveViewer)) + const Offset(0, 150),
+        const Offset(-200, 10),
+      );
+      await tester.pump();
+      expect(shownTitle(tester), 'y');
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(played, isEmpty);
+
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pumpAndSettle();
+      expect(played, ['y']);
+    });
+
+    testWidgets('a clip reached with the arrow key still held waits for it to be let go', (tester) async {
+      await open(tester, _sequenceOf(items, 0), playClip: player());
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      expect(shownTitle(tester), 'x');
+      for (var i = 0; i < 10; i++) {
+        await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(shownTitle(tester), 'x');
+      expect(played, isEmpty);
+
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(played, isEmpty);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pumpAndSettle();
+      expect(played, ['x']);
+    });
+
+    for (final (name, close) in <(String, Future<void> Function(WidgetTester, Completer<void>))>[
+      ('Back', (tester, _) => press(tester, LogicalKeyboardKey.escape)),
+      (
+        'the clip ending',
+        (tester, ends) async {
+          ends.complete();
+          await tester.pumpAndSettle();
+        },
+      ),
+    ]) {
+      testWidgets('after $name the clip does not play again until the viewer comes back to it', (tester) async {
+        final ends = Completer<void>();
+        await open(tester, _sequenceOf(items, 0), playClip: player(ends: ends.future));
+
+        await tap(tester, LogicalKeyboardKey.arrowRight, after: PhotoSequenceViewer.clipAutoplayDelay);
+        await tester.pumpAndSettle();
+        expect(played, ['x']);
+
+        await close(tester, ends);
+        expect(find.byType(_StandInPlayer), findsNothing);
+        expect(shownTitle(tester), 'x');
+        expect(primaryFocus()?.debugLabel, 'photo_viewer_play');
+        await tester.pump(const Duration(seconds: 2));
+        expect(played, ['x']);
+
+        await tap(tester, LogicalKeyboardKey.arrowLeft, after: const Duration(milliseconds: 100));
+        await tap(tester, LogicalKeyboardKey.arrowRight, after: PhotoSequenceViewer.clipAutoplayDelay);
+        await tester.pumpAndSettle();
+        expect(played, ['x', 'x']);
+      });
+    }
+
+    testWidgets('a clip the viewer opens on plays at once only when it was opened to play', (tester) async {
+      await open(tester, _sequenceOf(items, 1), playClip: player());
+      await tester.pump(const Duration(seconds: 1));
+      expect(played, isEmpty);
+    });
+
+    testWidgets('nothing plays by itself with the setting off', (tester) async {
+      await SettingsService.instance.write(SettingsService.photoClipAutoplay, false);
+      await open(tester, _sequenceOf(items, 0), playClip: player());
+
+      await tap(tester, LogicalKeyboardKey.arrowRight, after: const Duration(seconds: 2));
+      expect(shownTitle(tester), 'x');
+      expect(played, isEmpty);
+      expect(find.byTooltip('Play'), findsOneWidget);
+    });
+
+    testWidgets('a screen opened over the viewer before the delay keeps the clip from playing', (tester) async {
+      await open(tester, _sequenceOf(items, 0), playClip: player());
+
+      await tap(tester, LogicalKeyboardKey.arrowRight, after: const Duration(milliseconds: 100));
+      unawaited(
+        Navigator.of(
+          tester.element(find.byType(PhotoViewerScreen)),
+        ).push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('over')))),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      expect(played, isEmpty);
     });
   });
 }

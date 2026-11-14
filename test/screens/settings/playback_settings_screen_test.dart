@@ -278,4 +278,26 @@ void main() {
 
     expect(find.text('Gestures'), findsNothing);
   });
+
+  testWidgets('photos play their clips automatically until that is turned off', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1000, 1400);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(MaterialApp(theme: monoTheme(MonoPalette.dark), home: const PlaybackSettingsScreen()));
+    await tester.pumpAndSettle();
+
+    final title = find.text('Play Clips Automatically');
+    await tester.scrollUntilVisible(title, 500, scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Photos'), findsOneWidget);
+    expect(SettingsService.instance.read(SettingsService.photoClipAutoplay), isTrue);
+
+    await tester.tap(title);
+    await tester.pumpAndSettle();
+
+    expect(SettingsService.instance.read(SettingsService.photoClipAutoplay), isFalse);
+    expect(SettingsService.instance.prefs.getBool(SettingsService.photoClipAutoplay.key), isFalse);
+  });
 }
