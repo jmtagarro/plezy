@@ -43,6 +43,7 @@ import '../../media/media_source_info.dart';
 import '../../models/transcode_quality_preset.dart';
 import '../../media/media_version.dart';
 import '../../screens/video_player_screen.dart';
+import '../../screens/video_player/player_sequence_link.dart';
 import '../../focus/key_event_utils.dart';
 import '../../services/keyboard_shortcuts_service.dart';
 import '../../services/live_seek_accumulator.dart';
@@ -628,6 +629,10 @@ class PlexVideoControls extends StatefulWidget {
   /// Next and previous move through the sequence the player was opened from,
   /// such as the photos and clips of an album: their buttons show only where
   /// there is an item to go to, and the hardware track keys step it too.
+  /// Touch controls trade the large centre buttons for a compact bar at the
+  /// bottom, and the chrome keeps the photo viewer's timing: it hides after
+  /// [PlayerSequenceLink.chromeHideDelay] of playing, and stays up while
+  /// paused.
   final bool sequenceNavigation;
 
   /// Notifier for whether first video frame has rendered (shows loading state when false).
@@ -1051,6 +1056,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
       hideDelay: _hideDelay,
       hasFirstFrame: widget.hasFirstFrame?.value ?? true,
       directionalNavigation: playerDirectionalNavigationEnabled(),
+      keepWhilePaused: widget.sequenceNavigation,
     );
   }
 
@@ -1277,7 +1283,9 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                               canRequestFocus: _showControls,
                               child: AnimatedOpacity(
                                 opacity: _controlsOpaque ? 1.0 : 0.0,
-                                duration: const Duration(milliseconds: 200),
+                                duration: widget.sequenceNavigation
+                                    ? PlayerSequenceLink.chromeFade
+                                    : const Duration(milliseconds: 200),
                                 onEnd: () {
                                   if (!_showControls) {
                                     widget.chromeController.markControlsHidden();
@@ -1356,6 +1364,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                                                       onNext: _abandoningBurst(widget.onNext),
                                                       onPrevious: _abandoningBurst(widget.onPrevious),
                                                       hideUnavailableItemNavigation: widget.sequenceNavigation,
+                                                      compactSequenceControls: widget.sequenceNavigation,
                                                       canControl: widget.canControl,
                                                       hasFirstFrame: widget.hasFirstFrame,
                                                       thumbnailDataBuilder: widget.thumbnailDataBuilder,

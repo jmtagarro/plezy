@@ -62,7 +62,8 @@ extension _PlexVideoControlsVisibilityMethods on _PlexVideoControlsState {
   }
 
   /// Controls hide delay: 5s on touch mobile and under D-pad/keyboard
-  /// navigation, 3s on desktop with a mouse. Every D-pad press restarts the
+  /// navigation, 3s on desktop with a mouse, and the photo viewer's own delay
+  /// everywhere for a clip of a photo sequence. Every D-pad press restarts the
   /// timer, so traversing the bar never races it; a paused D-pad viewer keeps
   /// the chrome until they dismiss it (see [PlayerChromeController.configure]).
   /// Maestro builds extend the delay because accessibility-tree queries can
@@ -71,6 +72,7 @@ extension _PlexVideoControlsVisibilityMethods on _PlexVideoControlsState {
     if (const bool.fromEnvironment('PLEZY_MAESTRO_E2E')) {
       return const Duration(seconds: 30);
     }
+    if (widget.sequenceNavigation) return PlayerSequenceLink.chromeHideDelay;
     final isMobile = (Platform.isIOS || Platform.isAndroid) && !PlatformDetector.isTV();
     if (isMobile || playerDirectionalNavigationEnabled()) {
       return const Duration(seconds: 5);

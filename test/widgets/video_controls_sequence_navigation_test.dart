@@ -11,6 +11,7 @@ import 'package:plezy/database/app_database.dart';
 import 'package:plezy/focus/input_mode_tracker.dart';
 import 'package:plezy/i18n/strings.g.dart';
 import 'package:plezy/mpv/mpv.dart';
+import 'package:plezy/screens/video_player/player_sequence_link.dart';
 import 'package:plezy/providers/playback_state_provider.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/services/video_volume_controller.dart';
@@ -23,15 +24,18 @@ import 'package:plezy/widgets/video_controls/video_control_button.dart';
 import 'package:plezy/widgets/video_controls/video_controls.dart';
 import 'package:plezy/widgets/video_controls/widgets/circular_control_button.dart';
 import 'package:plezy/widgets/video_controls/widgets/player_toast_indicator.dart';
+import 'package:plezy/widgets/video_controls/widgets/sequence_control_bar.dart';
+import 'package:plezy/widgets/video_controls/widgets/video_timeline_bar.dart';
 
 import '../test_helpers/media_items.dart';
 import '../test_helpers/prefs.dart';
 import '../test_helpers/theme.dart';
 
 /// A player opened from a sequence, such as the photos and clips of an album,
-/// shows next and previous only where the sequence has an item, and its track
-/// keys step the sequence. Any other player keeps its buttons and keys as
-/// they are.
+/// steps the sequence with next, previous and its track keys. On a phone it
+/// trades the large centre controls for a compact bar, and its chrome keeps
+/// the photo viewer's timing. Any other player keeps its buttons, keys and
+/// chrome as they are.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -136,21 +140,21 @@ void main() {
         (widget is VideoControlButton && widget.semanticLabel == label),
   );
 
+  testWidgets('desktop: in a sequence only the way with an item has a button', (tester) async {
+    var nexts = 0;
+    await pumpControls(tester, desktop: true, sequenceNavigation: true, onNext: () => nexts++);
+
+    expect(button(t.videoControls.nextButton), findsOneWidget);
+    expect(button(t.videoControls.previousButton), findsNothing);
+
+    await tester.tap(button(t.videoControls.nextButton));
+    await tester.pump();
+    expect(nexts, 1);
+    await finish(tester);
+  });
+
   for (final desktop in [false, true]) {
     final surface = desktop ? 'desktop' : 'phone';
-
-    testWidgets('$surface: in a sequence only the way with an item has a button', (tester) async {
-      var nexts = 0;
-      await pumpControls(tester, desktop: desktop, sequenceNavigation: true, onNext: () => nexts++);
-
-      expect(button(t.videoControls.nextButton), findsOneWidget);
-      expect(button(t.videoControls.previousButton), findsNothing);
-
-      await tester.tap(button(t.videoControls.nextButton));
-      await tester.pump();
-      expect(nexts, 1);
-      await finish(tester);
-    });
 
     testWidgets('$surface: outside a sequence both buttons stay, the unavailable one disabled', (tester) async {
       await pumpControls(tester, desktop: desktop, sequenceNavigation: false, onNext: () {});
@@ -160,6 +164,107 @@ void main() {
       await finish(tester);
     });
   }
+
+  group('phone sequence bar', () {
+    Finder inBar(Finder finder) => find.descendant(of: find.byType(SequenceControlBar), matching: finder);
+
+    testWidgets('takes the place of the centre controls, with a compact timeline', (tester) async {
+      await pumpControls(tester, desktop: false, sequenceNavigation: true, onNext: () {});
+
+      expect(find.byType(CircularControlButton), findsNothing);
+      expect(find.byType(SequenceControlBar), findsOneWidget);
+      final timeline = tester.widget<VideoTimelineBar>(inBar(find.byType(VideoTimelineBar)));
+      expect(timeline.horizontalLayout, isTrue);
+      expect(find.byType(VideoTimelineBar), findsOneWidget, reason: 'the full timeline is not shown as well');
+      await finish(tester);
+    });
+
+    testWidgets('keeps previous and next in place, disabled where there is nowhere to go', (tester) async {
+      var nexts = 0;
+      await pumpControls(tester, desktop: false, sequenceNavigation: true, onNext: () => nexts++);
+
+      final previous = tester.widget<VideoControlButton>(inBar(button(t.videoControls.previousButton)));
+      expect(previous.onPressed, isNull);
+      final play = inBar(button(t.videoControls.pauseButton));
+      expect(
+        tester.getCenter(play).dx,
+        moreOrLessEquals(tester.getCenter(find.byType(SequenceControlBar)).dx),
+        reason: 'the play button does not shift for the missing previous item',
+      );
+
+      await tester.tap(inBar(button(t.videoControls.nextButton)));
+      await tester.pump();
+      expect(nexts, 1);
+      await finish(tester);
+    });
+
+    testWidgets('plays and pauses, and follows the player', (tester) async {
+      await pumpControls(tester, desktop: false, sequenceNavigation: true);
+
+      await tester.tap(inBar(button(t.videoControls.pauseButton)));
+      await tester.pump();
+      expect(player.toggles, 1);
+
+      player.setPlaying(false);
+      await tester.pump();
+      expect(inBar(button(t.videoControls.playButton)), findsOneWidget);
+      await finish(tester);
+    });
+
+    testWidgets('outside a sequence the centre controls and full timeline are unchanged', (tester) async {
+      await pumpControls(tester, desktop: false, sequenceNavigation: false, onNext: () {});
+
+      expect(find.byType(SequenceControlBar), findsNothing);
+      expect(find.byType(CircularControlButton), findsNWidgets(3));
+      expect(tester.widget<VideoTimelineBar>(find.byType(VideoTimelineBar)).horizontalLayout, isFalse);
+      await finish(tester);
+    });
+  });
+
+  group('chrome timing', () {
+    testWidgets('a sequence clip hides its bars after the photo viewer delay, and keeps them while paused', (
+      tester,
+    ) async {
+      await pumpControls(tester, desktop: false, sequenceNavigation: true);
+      // Playing from the start; the clock starts now.
+      chrome.restartAutoHideForCurrentPlaybackState();
+
+      await tester.pump(PlayerSequenceLink.chromeHideDelay - const Duration(milliseconds: 100));
+      expect(chrome.controlsVisible, isTrue);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(chrome.controlsVisible, isFalse);
+      await tester.pumpAndSettle();
+
+      player.setPlaying(false);
+      chrome.show();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 30));
+      expect(chrome.controlsVisible, isTrue, reason: 'paused, the bars stay');
+      await finish(tester);
+    });
+
+    testWidgets('a desktop sequence clip takes the same delay', (tester) async {
+      await pumpControls(tester, desktop: true, sequenceNavigation: true);
+      // Playing from the start; the clock starts now.
+      chrome.restartAutoHideForCurrentPlaybackState();
+
+      await tester.pump(PlayerSequenceLink.chromeHideDelay - const Duration(milliseconds: 100));
+      expect(chrome.controlsVisible, isTrue);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(chrome.controlsVisible, isFalse);
+      await finish(tester);
+    });
+
+    testWidgets('any other player still hides its paused chrome', (tester) async {
+      await pumpControls(tester, desktop: false, sequenceNavigation: false);
+      player.setPlaying(false);
+      chrome.show();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 30));
+      expect(chrome.controlsVisible, isFalse);
+      await finish(tester);
+    });
+  });
 
   group('track keys', () {
     final steps = <String>[];
@@ -235,6 +340,10 @@ class _RemotePlayer implements Player {
   );
 
   final seeks = <Duration>[];
+  int toggles = 0;
+
+  @override
+  Future<void> playOrPause() async => toggles++;
 
   @override
   Future<void> seek(Duration position) async => seeks.add(position);

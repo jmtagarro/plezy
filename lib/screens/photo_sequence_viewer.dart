@@ -252,9 +252,9 @@ class PhotoSequenceViewer extends StatefulWidget {
 
   /// A slideshow hides its header once it has gone on this long without any
   /// input. A paused one always shows it.
-  static const headerHideDelay = Duration(seconds: 4);
+  static const headerHideDelay = PlayerSequenceLink.chromeHideDelay;
 
-  static const headerFade = Duration(milliseconds: 200);
+  static const headerFade = PlayerSequenceLink.chromeFade;
 
   /// The photos of a slideshow fade from one to the next for this long.
   static const slideshowCrossFade = Duration(milliseconds: 400);

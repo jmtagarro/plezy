@@ -16,6 +16,14 @@ class PlayerSequenceLink extends ChangeNotifier {
   /// [leavesOnFailure] closes.
   static const failureNoticeDuration = Duration(seconds: 2);
 
+  /// A sequence hides its bars once it has played this long without any
+  /// input, in the photo viewer and in the player alike. Paused, it keeps
+  /// them.
+  static const chromeHideDelay = Duration(seconds: 4);
+
+  /// How quickly a sequence's bars fade in and out.
+  static const chromeFade = Duration(milliseconds: 200);
+
   bool _hasPrevious;
   bool _hasNext;
   int? _requestedStep;

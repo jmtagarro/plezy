@@ -175,6 +175,28 @@ void main() {
       expect(controller.controlsVisible, isTrue);
     });
 
+    // A clip of a photo sequence keeps its bars while paused, on touch too, as
+    // the photo viewer does; playing, they still hide on the delay.
+    testWidgets('keepWhilePaused keeps paused controls up and still hides playing ones', (tester) async {
+      final controller = PlayerChromeController();
+      addTearDown(controller.dispose);
+
+      controller.configure(hideDelay: const Duration(milliseconds: 100));
+      controller.setPlaying(true);
+      controller.setPlaying(false);
+      await tester.pump(const Duration(milliseconds: 50));
+
+      controller.configure(hideDelay: const Duration(milliseconds: 100), keepWhilePaused: true);
+      await tester.pump(const Duration(seconds: 1));
+      expect(controller.controlsVisible, isTrue, reason: 'the pending paused auto-hide was disarmed');
+
+      controller.setPlaying(true);
+      await tester.pump(const Duration(milliseconds: 99));
+      expect(controller.controlsVisible, isTrue);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(controller.controlsVisible, isFalse);
+    });
+
     test('show stores play/pause focus request and notifies even when already visible', () {
       final controller = PlayerChromeController();
       addTearDown(controller.dispose);

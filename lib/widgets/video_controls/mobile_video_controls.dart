@@ -15,6 +15,7 @@ import 'widgets/content_strip.dart';
 import 'widgets/content_strip_panel.dart';
 import 'widgets/first_frame_guard.dart';
 import 'widgets/play_pause_stream_builder.dart';
+import 'widgets/sequence_control_bar.dart';
 import 'widgets/live_timeline_bar.dart';
 import 'widgets/video_controls_header.dart';
 import 'widgets/video_timeline_bar.dart';
@@ -29,6 +30,10 @@ import 'widgets/video_timeline_bar.dart';
 /// When chapters or queue are available, the user can swipe up on the bottom
 /// area to slide a content strip into view. The playback controls and timeline
 /// fade out while the strip slides up — only the top bar stays fixed.
+///
+/// A clip of a photo sequence ([compactSequenceControls]) has no centre
+/// controls: its bottom bar is a [SequenceControlBar], a compact timeline over
+/// small previous, play/pause and next buttons.
 class MobileVideoControls extends StatefulWidget {
   final Player player;
   final MediaItem metadata;
@@ -53,6 +58,11 @@ class MobileVideoControls extends StatefulWidget {
   /// Leaves out the next and previous buttons that have nowhere to go,
   /// instead of dimming them.
   final bool hideUnavailableItemNavigation;
+
+  /// Replaces the large centre controls and the timeline with a compact
+  /// [SequenceControlBar], for a clip played from a photo sequence. Its
+  /// previous and next stay in place, disabled, where there is nowhere to go.
+  final bool compactSequenceControls;
 
   /// Whether the user can control playback (false in host-only mode for non-host).
   final bool canControl;
@@ -113,6 +123,7 @@ class MobileVideoControls extends StatefulWidget {
     this.onNext,
     this.onPrevious,
     this.hideUnavailableItemNavigation = false,
+    this.compactSequenceControls = false,
     this.canControl = true,
     this.hasFirstFrame,
     this.thumbnailDataBuilder,
@@ -343,8 +354,9 @@ class _MobileVideoControlsState extends State<MobileVideoControls> with SingleTi
   }
 
   Widget _buildPlaybackControls(BuildContext _) {
-    // Hide all playback controls in host-only mode for non-host
-    if (!widget.canControl) {
+    // Hide all playback controls in host-only mode for non-host, and in a
+    // sequence, whose bottom bar holds them.
+    if (!widget.canControl || widget.compactSequenceControls) {
       return const SizedBox.shrink();
     }
 
@@ -436,6 +448,7 @@ class _MobileVideoControlsState extends State<MobileVideoControls> with SingleTi
   }
 
   Widget _buildBottomBarContent(BuildContext context) {
+    if (widget.compactSequenceControls) return _buildSequenceBar(context);
     return _conditionalSafeArea(
       context: context,
       top: false, // Only respect bottom safe area when in portrait
@@ -454,6 +467,46 @@ class _MobileVideoControlsState extends State<MobileVideoControls> with SingleTi
           enabled: widget.canControl,
           showFinishTime: true,
           thumbnailDataBuilder: widget.thumbnailDataBuilder,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSequenceBar(BuildContext context) {
+    return _conditionalSafeArea(
+      context: context,
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: PlayPauseStreamBuilder(
+          player: widget.player,
+          builder: (context, isPlaying) => SequenceControlBar(
+            playing: isPlaying,
+            onPlayPause: !widget.canControl
+                ? null
+                : () {
+                    widget.onPlayPause();
+                    if (isPlaying) {
+                      widget.onCancelAutoHide?.call();
+                    } else {
+                      widget.onStartAutoHide?.call();
+                    }
+                  },
+            onPrevious: widget.onPrevious,
+            onNext: widget.onNext,
+            seek: VideoTimelineBar(
+              player: widget.player,
+              chapters: widget.chapters,
+              chaptersLoaded: widget.chaptersLoaded,
+              showChapterMarkersOnTimeline: widget.showChapterMarkersOnTimeline,
+              onSeek: widget.onSeek,
+              onSeekEnd: widget.onSeekEnd,
+              onScrubStart: widget.onScrubStart,
+              onScrubEnd: widget.onScrubEnd,
+              enabled: widget.canControl,
+              thumbnailDataBuilder: widget.thumbnailDataBuilder,
+            ),
+          ),
         ),
       ),
     );

@@ -22,6 +22,7 @@ class PlayerChromeController extends ChangeNotifier implements ValueListenable<b
   bool _hasFirstFrame = true;
   Duration _hideDelay = const Duration(seconds: 3);
   bool _directionalNavigation = false;
+  bool _keepWhilePaused = false;
   Timer? _hideTimer;
   bool _pendingPlayPauseFocus = false;
   final Set<PlayerChromeHold> _holds = <PlayerChromeHold>{};
@@ -45,7 +46,15 @@ class PlayerChromeController extends ChangeNotifier implements ValueListenable<b
   /// paused chrome then stays up until dismissed, because the remote has no
   /// "tap to bring it back" and a viewer who paused to read the OSD would
   /// otherwise lose it mid-read.
-  void configure({Duration? hideDelay, bool? hasFirstFrame, bool directionalNavigation = false}) {
+  ///
+  /// [keepWhilePaused] keeps the paused chrome up for every viewer, as a
+  /// photo sequence keeps its bars while paused.
+  void configure({
+    Duration? hideDelay,
+    bool? hasFirstFrame,
+    bool directionalNavigation = false,
+    bool keepWhilePaused = false,
+  }) {
     var restartTimer = false;
     if (hideDelay != null && hideDelay != _hideDelay) {
       _hideDelay = hideDelay;
@@ -57,6 +66,10 @@ class PlayerChromeController extends ChangeNotifier implements ValueListenable<b
     }
     if (directionalNavigation != _directionalNavigation) {
       _directionalNavigation = directionalNavigation;
+      restartTimer = true;
+    }
+    if (keepWhilePaused != _keepWhilePaused) {
+      _keepWhilePaused = keepWhilePaused;
       restartTimer = true;
     }
     if (restartTimer) _startAutoHideForCurrentPlaybackState();
@@ -178,7 +191,9 @@ class PlayerChromeController extends ChangeNotifier implements ValueListenable<b
 
   void startPausedAutoHide() {
     _hideTimer?.cancel();
-    if (!_controlsVisible || !_hasFirstFrame || _holds.isNotEmpty || _directionalNavigation) return;
+    if (!_controlsVisible || !_hasFirstFrame || _holds.isNotEmpty || _directionalNavigation || _keepWhilePaused) {
+      return;
+    }
     _hideTimer = Timer(_hideDelay, hide);
   }
 
