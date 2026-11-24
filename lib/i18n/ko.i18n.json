@@ -809,9 +809,8 @@
     "playTrailer": "예고편 재생",
     "markAsWatched": "시청 완료로 표시",
     "markAsUnwatched": "미시청으로 표시",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1251,6 +1250,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "미디어 라이브러리",
     "fallbackTitle": "라이브러리",
     "scanLibraryFiles": "미디어 라이브러리 파일 스캔",

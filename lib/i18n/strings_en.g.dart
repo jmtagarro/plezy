@@ -2261,14 +2261,11 @@ class Translations$tooltips$en {
 	/// en: 'Mark as unwatched'
 	String get markAsUnwatched => 'Mark as unwatched';
 
-	/// en: 'Previous photo'
-	String get previousPhoto => 'Previous photo';
+	/// en: 'Previous'
+	String get previousItem => 'Previous';
 
-	/// en: 'Next photo'
-	String get nextPhoto => 'Next photo';
-
-	/// en: 'Slideshow paused'
-	String get slideshowPaused => 'Slideshow paused';
+	/// en: 'Next'
+	String get nextItem => 'Next';
 
 	/// en: 'Play this album in order'
 	String get playPhotoAlbum => 'Play this album in order';
@@ -3455,6 +3452,9 @@ class Translations$libraries$en {
 
 	/// en: 'Album · ${name} · ${index} / ${total}'
 	String slideshowAlbumMode({required Object name, required Object index, required Object total}) => 'Album · ${name} · ${index} / ${total}';
+
+	/// en: '${index} / ${total}'
+	String photoPosition({required Object index, required Object total}) => '${index} / ${total}';
 
 	/// en: 'Libraries'
 	String get title => 'Libraries';
@@ -8916,9 +8916,8 @@ extension on Translations {
 			'tooltips.playTrailer' => 'Play trailer',
 			'tooltips.markAsWatched' => 'Mark as watched',
 			'tooltips.markAsUnwatched' => 'Mark as unwatched',
-			'tooltips.previousPhoto' => 'Previous photo',
-			'tooltips.nextPhoto' => 'Next photo',
-			'tooltips.slideshowPaused' => 'Slideshow paused',
+			'tooltips.previousItem' => 'Previous',
+			'tooltips.nextItem' => 'Next',
 			'tooltips.playPhotoAlbum' => 'Play this album in order',
 			'tooltips.backToShuffle' => 'Back to shuffle',
 			'audioTracks.track' => ({required Object n}) => 'Audio Track ${n}',
@@ -9181,9 +9180,9 @@ extension on Translations {
 			'profiles.borrowFromProfile' => ({required Object displayName}) => 'From ${displayName}',
 			'profiles.borrowConnectionBorrowed' => 'Connection borrowed.',
 			'profiles.borrowFailed' => 'Failed to borrow connection.',
+			'profiles.incorrectPin' => 'Incorrect PIN.',
 			_ => null,
 		} ?? switch (path) {
-			'profiles.incorrectPin' => 'Incorrect PIN.',
 			'profiles.incorrectPinTryAgain' => 'Incorrect PIN. Please try again.',
 			'profiles.sourceProfileMissingParentAccount' => 'Source profile is missing its parent account.',
 			'profiles.failedToLoadHomeUsers' => 'Could not load your Plex Home users. Check your connection and try again.',
@@ -9315,6 +9314,7 @@ extension on Translations {
 			'errors.reasonUnexpected' => 'an unexpected error occurred',
 			'libraries.slideshowShuffleMode' => ({required Object scope}) => 'Shuffle · ${scope}',
 			'libraries.slideshowAlbumMode' => ({required Object name, required Object index, required Object total}) => 'Album · ${name} · ${index} / ${total}',
+			'libraries.photoPosition' => ({required Object index, required Object total}) => '${index} / ${total}',
 			'libraries.title' => 'Libraries',
 			'libraries.fallbackTitle' => 'Library',
 			'libraries.scanLibraryFiles' => 'Scan Library Files',

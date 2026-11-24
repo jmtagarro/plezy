@@ -812,9 +812,8 @@
     "playTrailer": "Treyleri oynat",
     "markAsWatched": "Baxıldı olaraq işarələ",
     "markAsUnwatched": "Baxılmadı olaraq işarələ",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1256,6 +1255,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "Kitabxanalar",
     "fallbackTitle": "Kitabxana",
     "scanLibraryFiles": "Kitabxana fayllarını skan et",

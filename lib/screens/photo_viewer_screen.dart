@@ -117,7 +117,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final header = _navigation?.header;
-      // Focus in a slideshow's header stays there as the photos change.
+      // Focus in a sequence's bars stays there as the photos change.
       if (header?.hasFocus() != true) _entryFocusNode.requestFocus();
       header?.attachPhoto(this, _entryFocusNode.requestFocus);
     });
@@ -199,15 +199,28 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
     );
   }
 
+  /// A tap near the left or right edge moves to the previous or next item,
+  /// unless the photo is zoomed in; anywhere else it does what the sequence
+  /// makes of a tap.
+  void _handleTap(Offset position) {
+    final navigation = _navigation!;
+    final width = MediaQuery.sizeOf(context).width;
+    final edge = (width * PhotoNavigation.edgeTapFraction).clamp(PhotoNavigation.minEdgeTapWidth, width / 2);
+    final zoomed = _transformation.value.getMaxScaleOnAxis() > 1;
+    if (!zoomed && position.dx < edge) return navigation.onPrevious?.call();
+    if (!zoomed && position.dx > width - edge) return navigation.onNext?.call();
+    navigation.onSelect?.call();
+  }
+
   String get _title => PhotoViewerScreen.titleOf(widget.photo);
 
   String? get _dateLabel => PhotoViewerScreen.dateLabelOf(widget.photo);
 
-  /// Up and Down move between the photo and the back button, or the header a
-  /// slideshow draws in its place. Left and Right move to the previous and
-  /// next photo of the sequence, once per press, as
-  /// each photo is a new request to the server. They are consumed either way,
-  /// so they cannot wander off to the back button.
+  /// Up moves from the photo to the back button, or to the header a sequence
+  /// draws in its place, and Down to the sequence's bar, where it has one.
+  /// Left and Right move to the previous and next photo of the sequence, once
+  /// per press, as each photo is a new request to the server. They are
+  /// consumed either way, so they cannot wander off to the back button.
   KeyEventResult _handleKeyEvent(KeyEvent event) {
     final key = event.logicalKey;
     if (!key.isDpadDirection) return handleBackKeyNavigation(context, event);
@@ -216,7 +229,9 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
         final header = _navigation?.header;
         header != null ? header.focus() : _backFocusNode.requestFocus();
       }
-      if (key == LogicalKeyboardKey.arrowDown) _entryFocusNode.requestFocus();
+      if (key == LogicalKeyboardKey.arrowDown && _navigation?.header?.focusBar() != true) {
+        _entryFocusNode.requestFocus();
+      }
     }
     if (event is KeyDownEvent) {
       if (key == LogicalKeyboardKey.arrowLeft) _navigation?.onPrevious?.call();
@@ -309,7 +324,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
                   return KeyEventResult.handled;
                 },
                 child: GestureDetector(
-                  onTap: _navigation?.onSelect,
+                  onTapUp: _navigation == null ? null : (details) => _handleTap(details.localPosition),
                   // Claims a double tap, so its two taps are not two pauses.
                   // The double tap itself belongs to the photo's zoom.
                   onDoubleTap: _navigation?.onSelect == null ? null : () {},

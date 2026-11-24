@@ -812,9 +812,8 @@
     "playTrailer": "Trailer abspielen",
     "markAsWatched": "Als gesehen markieren",
     "markAsUnwatched": "Als ungesehen markieren",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1256,6 +1255,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "Mediatheken",
     "fallbackTitle": "Mediathek",
     "scanLibraryFiles": "Mediatheksdateien scannen",

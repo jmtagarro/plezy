@@ -14,6 +14,7 @@ import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/theme/mono_theme.dart';
 import 'package:plezy/utils/immersive_mode_guard.dart';
 import 'package:plezy/utils/media_navigation_helper.dart';
+import 'package:plezy/widgets/video_controls/widgets/sequence_control_bar.dart';
 import 'package:provider/provider.dart';
 import '../test_helpers/media_items.dart';
 import '../test_helpers/multi_server_fixtures.dart';
@@ -57,7 +58,7 @@ void main() {
       expect(find.byType(PhotoViewerScreen), findsOneWidget);
       expect(find.byType(MediaDetailScreen), findsNothing);
       // Opened on its own, with nothing to move to.
-      expect(find.byTooltip(t.tooltips.nextPhoto), findsNothing);
+      expect(find.byType(SequenceControlBar), findsNothing);
     });
   });
 

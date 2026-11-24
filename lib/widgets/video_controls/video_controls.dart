@@ -13,6 +13,7 @@ import 'package:flutter/gestures.dart'
         PointerSignalEvent,
         PointerUpEvent,
         kDoubleTapTimeout;
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:rate_limiter/rate_limiter.dart';
@@ -67,6 +68,7 @@ import 'icons.dart';
 import 'player_chrome_controller.dart';
 import 'playback_extras_loader.dart';
 import 'widgets/player_toast_indicator.dart';
+import 'widgets/sequence_control_bar.dart';
 import 'widgets/transport_feedback_indicator.dart';
 import '../../utils/app_logger.dart';
 import '../../i18n/strings.g.dart';
@@ -635,6 +637,10 @@ class PlexVideoControls extends StatefulWidget {
   /// paused.
   final bool sequenceNavigation;
 
+  /// What the sequence goes through, shown above the compact bar of the
+  /// touch controls, with its switches between shuffle and album.
+  final ValueListenable<SequenceMode?>? sequenceMode;
+
   /// Notifier for whether first video frame has rendered (shows loading state when false).
   final ValueNotifier<bool>? hasFirstFrame;
 
@@ -753,6 +759,7 @@ class PlexVideoControls extends StatefulWidget {
     this.canControl = true,
     required this.canNavigateMediaItems,
     this.sequenceNavigation = false,
+    this.sequenceMode,
     this.hasFirstFrame,
     this.playNextFocusNode,
     this.playbackPromptOpen = false,
@@ -1365,6 +1372,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
                                                       onPrevious: _abandoningBurst(widget.onPrevious),
                                                       hideUnavailableItemNavigation: widget.sequenceNavigation,
                                                       compactSequenceControls: widget.sequenceNavigation,
+                                                      sequenceMode: widget.sequenceMode,
                                                       canControl: widget.canControl,
                                                       hasFirstFrame: widget.hasFirstFrame,
                                                       thumbnailDataBuilder: widget.thumbnailDataBuilder,

@@ -818,9 +818,8 @@
     "playTrailer": "Воспроизвести трейлер",
     "markAsWatched": "Отметить как просмотренное",
     "markAsUnwatched": "Отметить как непросмотренное",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1266,6 +1265,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "Библиотеки",
     "fallbackTitle": "Библиотека",
     "scanLibraryFiles": "Сканировать файлы библиотеки",

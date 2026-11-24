@@ -812,9 +812,8 @@
     "playTrailer": "Play trailer",
     "markAsWatched": "Mark as watched",
     "markAsUnwatched": "Mark as unwatched",
-    "previousPhoto": "Previous photo",
-    "nextPhoto": "Next photo",
-    "slideshowPaused": "Slideshow paused",
+    "previousItem": "Previous",
+    "nextItem": "Next",
     "playPhotoAlbum": "Play this album in order",
     "backToShuffle": "Back to shuffle"
   },
@@ -1256,6 +1255,7 @@
   "libraries": {
     "slideshowShuffleMode": "Shuffle · ${scope}",
     "slideshowAlbumMode": "Album · ${name} · ${index} / ${total}",
+    "photoPosition": "${index} / ${total}",
     "title": "Libraries",
     "fallbackTitle": "Library",
     "scanLibraryFiles": "Scan Library Files",

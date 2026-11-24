@@ -812,9 +812,8 @@
     "playTrailer": "Afspil trailer",
     "markAsWatched": "Markér som set",
     "markAsUnwatched": "Markér som uset",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1256,6 +1255,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "Biblioteker",
     "fallbackTitle": "Bibliotek",
     "scanLibraryFiles": "Scan biblioteksfiler",

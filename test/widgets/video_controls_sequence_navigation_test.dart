@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:provider/provider.dart';
 
 import 'package:plezy/database/app_database.dart';
@@ -88,8 +90,16 @@ void main() {
     required bool sequenceNavigation,
     VoidCallback? onNext,
     VoidCallback? onPrevious,
+    ValueListenable<SequenceMode?>? sequenceMode,
+    Size size = const Size(1280, 720),
   }) async {
     if (desktop) PlatformDetector.debugSetIsDesktopOSOverride(true);
+    if (size != const Size(1280, 720)) {
+      tester.view
+        ..physicalSize = size * 3
+        ..devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+    }
     final controls = PlexVideoControls(
       player: player,
       volumeController: volume,
@@ -99,6 +109,7 @@ void main() {
       hasFirstFrame: hasFirstFrame,
       canNavigateMediaItems: true,
       sequenceNavigation: sequenceNavigation,
+      sequenceMode: sequenceMode,
       onNext: onNext,
       onPrevious: onPrevious,
     );
@@ -116,7 +127,10 @@ void main() {
               extensions: const [testMonoTokens],
             ),
             home: Scaffold(
-              body: SizedBox(width: 1280, height: 720, child: Focus(autofocus: true, child: controls)),
+              body: SizedBox.fromSize(
+                size: size,
+                child: Focus(autofocus: true, child: controls),
+              ),
             ),
           ),
         ),
@@ -183,7 +197,7 @@ void main() {
       var nexts = 0;
       await pumpControls(tester, desktop: false, sequenceNavigation: true, onNext: () => nexts++);
 
-      final previous = tester.widget<VideoControlButton>(inBar(button(t.videoControls.previousButton)));
+      final previous = tester.widget<VideoControlButton>(inBar(button(t.tooltips.previousItem)));
       expect(previous.onPressed, isNull);
       final play = inBar(button(t.videoControls.pauseButton));
       expect(
@@ -192,7 +206,7 @@ void main() {
         reason: 'the play button does not shift for the missing previous item',
       );
 
-      await tester.tap(inBar(button(t.videoControls.nextButton)));
+      await tester.tap(inBar(button(t.tooltips.nextItem)));
       await tester.pump();
       expect(nexts, 1);
       await finish(tester);
@@ -208,6 +222,80 @@ void main() {
       player.setPlaying(false);
       await tester.pump();
       expect(inBar(button(t.videoControls.playButton)), findsOneWidget);
+      await finish(tester);
+    });
+
+    testWidgets('names previous and next for the sequence, not as episodes', (tester) async {
+      await pumpControls(tester, desktop: false, sequenceNavigation: true, onNext: () {});
+
+      expect(inBar(button(t.tooltips.previousItem)), findsOneWidget);
+      expect(inBar(button(t.tooltips.nextItem)), findsOneWidget);
+      expect(button(t.videoControls.nextButton), findsNothing);
+      await finish(tester);
+    });
+
+    testWidgets('shows what the sequence goes through, and its switches work while the clip plays', (tester) async {
+      final calls = <String>[];
+      final mode = ValueNotifier<SequenceMode?>(
+        SequenceMode(
+          label: 'Shuffle · Holidays',
+          album: 'Summer',
+          onOpenAlbum: () => calls.add('album'),
+          shuffling: true,
+          onToggleShuffle: () => calls.add('toggle'),
+        ),
+      );
+      addTearDown(mode.dispose);
+      await pumpControls(tester, desktop: false, sequenceNavigation: true, sequenceMode: mode);
+
+      expect(inBar(find.text('Shuffle · Holidays')), findsOneWidget);
+      await tester.tap(inBar(find.text('Summer')));
+      await tester.pump();
+      expect(calls, ['album']);
+
+      mode.value = SequenceMode(label: 'Album · Summer · 2 / 3', onToggleShuffle: () => calls.add('toggle'));
+      await tester.pump();
+      expect(inBar(find.text('Album · Summer · 2 / 3')), findsOneWidget);
+      expect(inBar(find.text('Summer')), findsNothing);
+      await tester.tap(inBar(find.byIcon(Symbols.shuffle_rounded)));
+      await tester.pump();
+      expect(calls, ['album', 'toggle']);
+      await finish(tester);
+    });
+
+    for (final size in [const Size(915, 412), const Size(800, 360)]) {
+      testWidgets('on a ${size.width.round()}x${size.height.round()} phone in landscape, one row under the '
+          'timeline keeps the bar within a third of the height', (tester) async {
+        final mode = ValueNotifier<SequenceMode?>(
+          SequenceMode(label: 'Shuffle · Holidays', album: 'Summer', onOpenAlbum: () {}, onToggleShuffle: () {}),
+        );
+        addTearDown(mode.dispose);
+        await pumpControls(tester, desktop: false, sequenceNavigation: true, sequenceMode: mode, size: size);
+
+        final label = tester.getCenter(inBar(find.text('Shuffle · Holidays')));
+        final play = tester.getCenter(inBar(button(t.videoControls.pauseButton)));
+        expect(label.dy, moreOrLessEquals(play.dy, epsilon: 1), reason: 'the mode shares the row of the buttons');
+        expect(size.height - tester.getRect(find.byType(SequenceControlBar)).top, lessThan(size.height / 3));
+        await finish(tester);
+      });
+    }
+
+    testWidgets('on a phone in portrait, the mode has a row of its own', (tester) async {
+      final mode = ValueNotifier<SequenceMode?>(const SequenceMode(label: 'Shuffle · Holidays'));
+      addTearDown(mode.dispose);
+      await pumpControls(
+        tester,
+        desktop: false,
+        sequenceNavigation: true,
+        sequenceMode: mode,
+        size: const Size(412, 915),
+      );
+
+      final label = tester.getCenter(inBar(find.text('Shuffle · Holidays')));
+      final timeline = tester.getCenter(inBar(find.byType(VideoTimelineBar)));
+      final play = tester.getCenter(inBar(button(t.videoControls.pauseButton)));
+      expect(label.dy, lessThan(timeline.dy));
+      expect(timeline.dy, lessThan(play.dy));
       await finish(tester);
     });
 

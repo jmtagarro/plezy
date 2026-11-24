@@ -809,9 +809,8 @@
     "playTrailer": "予告編を再生",
     "markAsWatched": "視聴済みにする",
     "markAsUnwatched": "未視聴にする",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1251,6 +1250,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "ライブラリ",
     "fallbackTitle": "ライブラリ",
     "scanLibraryFiles": "ライブラリファイルをスキャン",

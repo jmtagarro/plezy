@@ -812,9 +812,8 @@
     "playTrailer": "Lire la bande-annonce",
     "markAsWatched": "Marquer comme vu",
     "markAsUnwatched": "Marquer comme non vu",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1256,6 +1255,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "Bibliothèques",
     "fallbackTitle": "Bibliothèque",
     "scanLibraryFiles": "Scanner les fichiers de la bibliothèque",

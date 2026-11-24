@@ -809,9 +809,8 @@
     "playTrailer": "播放預告片",
     "markAsWatched": "標記為已觀看",
     "markAsUnwatched": "標記為未觀看",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1251,6 +1250,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "媒體庫",
     "fallbackTitle": "媒體庫",
     "scanLibraryFiles": "掃描媒體庫檔案",

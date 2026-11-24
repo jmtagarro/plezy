@@ -812,9 +812,8 @@
     "playTrailer": "Fragmanı oynat",
     "markAsWatched": "İzlendi olarak işaretle",
     "markAsUnwatched": "İzlenmedi olarak işaretle",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1256,6 +1255,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "Kitaplıklar",
     "fallbackTitle": "Kitaplık",
     "scanLibraryFiles": "Kitaplık Dosyalarını Tarayınız",

@@ -812,9 +812,8 @@
     "playTrailer": "Előzetes lejátszása",
     "markAsWatched": "Megjelölés megtekintettként",
     "markAsUnwatched": "Megjelölés nem megtekintettként",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1256,6 +1255,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "Könyvtárak",
     "fallbackTitle": "Könyvtár",
     "scanLibraryFiles": "Könyvtárfájlok beolvasása",

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -64,6 +65,9 @@ class MobileVideoControls extends StatefulWidget {
   /// previous and next stay in place, disabled, where there is nowhere to go.
   final bool compactSequenceControls;
 
+  /// What the sequence goes through, shown above the compact bar.
+  final ValueListenable<SequenceMode?>? sequenceMode;
+
   /// Whether the user can control playback (false in host-only mode for non-host).
   final bool canControl;
 
@@ -124,6 +128,7 @@ class MobileVideoControls extends StatefulWidget {
     this.onPrevious,
     this.hideUnavailableItemNavigation = false,
     this.compactSequenceControls = false,
+    this.sequenceMode,
     this.canControl = true,
     this.hasFirstFrame,
     this.thumbnailDataBuilder,
@@ -478,38 +483,49 @@ class _MobileVideoControlsState extends State<MobileVideoControls> with SingleTi
       top: false,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-        child: PlayPauseStreamBuilder(
-          player: widget.player,
-          builder: (context, isPlaying) => SequenceControlBar(
-            playing: isPlaying,
-            onPlayPause: !widget.canControl
-                ? null
-                : () {
-                    widget.onPlayPause();
-                    if (isPlaying) {
-                      widget.onCancelAutoHide?.call();
-                    } else {
-                      widget.onStartAutoHide?.call();
-                    }
-                  },
-            onPrevious: widget.onPrevious,
-            onNext: widget.onNext,
-            seek: VideoTimelineBar(
-              player: widget.player,
-              chapters: widget.chapters,
-              chaptersLoaded: widget.chaptersLoaded,
-              showChapterMarkersOnTimeline: widget.showChapterMarkersOnTimeline,
-              onSeek: widget.onSeek,
-              onSeekEnd: widget.onSeekEnd,
-              onScrubStart: widget.onScrubStart,
-              onScrubEnd: widget.onScrubEnd,
-              enabled: widget.canControl,
-              thumbnailDataBuilder: widget.thumbnailDataBuilder,
+        child: _withSequenceMode(
+          (mode) => PlayPauseStreamBuilder(
+            player: widget.player,
+            builder: (context, isPlaying) => SequenceControlBar(
+              playing: isPlaying,
+              mode: mode,
+              onPlayPause: !widget.canControl
+                  ? null
+                  : () {
+                      widget.onPlayPause();
+                      if (isPlaying) {
+                        widget.onCancelAutoHide?.call();
+                      } else {
+                        widget.onStartAutoHide?.call();
+                      }
+                    },
+              onPrevious: widget.onPrevious,
+              onNext: widget.onNext,
+              seek: VideoTimelineBar(
+                player: widget.player,
+                chapters: widget.chapters,
+                chaptersLoaded: widget.chaptersLoaded,
+                showChapterMarkersOnTimeline: widget.showChapterMarkersOnTimeline,
+                onSeek: widget.onSeek,
+                onSeekEnd: widget.onSeekEnd,
+                onScrubStart: widget.onScrubStart,
+                onScrubEnd: widget.onScrubEnd,
+                enabled: widget.canControl,
+                thumbnailDataBuilder: widget.thumbnailDataBuilder,
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// Builds with the sequence's mode as it changes; the album and shuffle
+  /// switches work while the clip plays.
+  Widget _withSequenceMode(Widget Function(SequenceMode? mode) builder) {
+    final mode = widget.sequenceMode;
+    if (mode == null) return builder(null);
+    return ValueListenableBuilder<SequenceMode?>(valueListenable: mode, builder: (context, value, _) => builder(value));
   }
 
   /// Wraps [child] in a SafeArea: full insets in portrait, horizontal-only in

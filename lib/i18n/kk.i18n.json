@@ -812,9 +812,8 @@
     "playTrailer": "Трейлерді ойнату",
     "markAsWatched": "Көрілді деп белгілеу",
     "markAsUnwatched": "Көрілмеді деп белгілеу",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1256,6 +1255,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "Кітапханалар",
     "fallbackTitle": "Кітапхана",
     "scanLibraryFiles": "Файлдарды сканерлеу",

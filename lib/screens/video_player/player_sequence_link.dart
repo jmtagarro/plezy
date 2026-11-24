@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../widgets/video_controls/widgets/sequence_control_bar.dart';
+
 /// Ties a player to the sequence it was opened from, such as the photos and
 /// clips of an album. The sequence says which ways there is an item to go to;
 /// the player's next and previous commands then close the player and ask the
@@ -43,6 +45,11 @@ class PlayerSequenceLink extends ChangeNotifier {
     _hasNext = value;
     notifyListeners();
   }
+
+  /// What the sequence goes through, and its switches between shuffle and
+  /// album, which the player's sequence bar shows and works in place while
+  /// the clip plays. Null when the sequence names nothing.
+  final ValueNotifier<SequenceMode?> mode = ValueNotifier(null);
 
   /// Whether there is an item in the direction of [step] (-1 or 1).
   bool hasItem(int step) => step < 0 ? _hasPrevious : _hasNext;

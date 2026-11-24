@@ -812,9 +812,8 @@
     "playTrailer": "Riproduci trailer",
     "markAsWatched": "Segna come visto",
     "markAsUnwatched": "Segna come non visto",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1256,6 +1255,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "Librerie",
     "fallbackTitle": "Libreria",
     "scanLibraryFiles": "Scansiona i file della libreria",

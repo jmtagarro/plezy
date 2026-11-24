@@ -812,9 +812,8 @@
     "playTrailer": "Spill trailer",
     "markAsWatched": "Merk som sett",
     "markAsUnwatched": "Merk som usett",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1256,6 +1255,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "Biblioteker",
     "fallbackTitle": "Bibliotek",
     "scanLibraryFiles": "Skann bibliotekfiler",

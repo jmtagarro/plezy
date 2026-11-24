@@ -34,7 +34,8 @@ import 'package:plezy/utils/media_server_http_client.dart';
 import 'package:plezy/utils/orientation_helper.dart';
 import 'package:plezy/utils/platform_detector.dart';
 import 'package:plezy/widgets/app_bar_back_button.dart';
-import 'package:plezy/widgets/app_icon.dart';
+import 'package:plezy/widgets/video_controls/video_control_button.dart';
+import 'package:plezy/widgets/video_controls/widgets/sequence_control_bar.dart';
 import 'package:provider/provider.dart';
 
 import '../test_helpers/media_items.dart';
@@ -70,6 +71,24 @@ PhotoSequence _sequenceOf(
     },
   );
 }
+
+/// A button of the sequence bar, by its icon.
+Finder _barButton(IconData icon) => find.descendant(
+  of: find.byType(SequenceControlBar),
+  matching: find.byWidgetPredicate((widget) => widget is VideoControlButton && widget.icon == icon),
+);
+
+/// Whether the sequence bar offers to resume: a slideshow paused, not ended.
+bool _paused() => find
+    .descendant(
+      of: find.byType(SequenceControlBar),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is VideoControlButton && widget.icon == Symbols.play_arrow_rounded && widget.onPressed != null,
+      ),
+    )
+    .evaluate()
+    .isNotEmpty;
 
 void main() {
   // The artwork cache keeps its files here. Downloads in widget tests reach
@@ -268,22 +287,51 @@ void main() {
         expect(shownTitle(tester), 'b');
       });
 
-      testWidgets('focus is on the new photo, and Up still reaches the back button', (tester) async {
+      testWidgets('focus is on the new photo, Up reaches the back button, and Left and Right move from there', (
+        tester,
+      ) async {
         await open(tester, _sequenceOf(album, 0));
 
         await press(tester, LogicalKeyboardKey.arrowRight);
         expect(primaryFocus()?.debugLabel, 'photo_viewer_photo');
 
         await press(tester, LogicalKeyboardKey.arrowUp);
-        expect(primaryFocus()?.debugLabel, 'photo_viewer_back');
+        expect(primaryFocus()?.debugLabel, 'photo_sequence_back');
 
-        // Moving from the back button is fine too, and focus starts on the photo.
+        // The header holds Back alone, so Left and Right move the photos, and
+        // focus stays in the header as they change.
         await press(tester, LogicalKeyboardKey.arrowRight);
         expect(shownTitle(tester), 'c');
-        expect(primaryFocus()?.debugLabel, 'photo_viewer_photo');
+        expect(primaryFocus()?.debugLabel, 'photo_sequence_back');
 
+        await press(tester, LogicalKeyboardKey.arrowDown);
+        expect(primaryFocus()?.debugLabel, 'photo_viewer_photo');
         await press(tester, LogicalKeyboardKey.arrowUp);
         await press(tester, LogicalKeyboardKey.enter);
+        expect(find.byType(PhotoSequenceViewer), findsNothing);
+      });
+
+      testWidgets('Down reaches the sequence bar, which moves along with Left and Right, and Up returns', (
+        tester,
+      ) async {
+        await open(tester, _sequenceOf(album, 0));
+
+        await press(tester, LogicalKeyboardKey.arrowDown);
+        expect(primaryFocus()?.debugLabel, 'sequence_bar_next');
+        await press(tester, LogicalKeyboardKey.enter);
+        expect(shownTitle(tester), 'b');
+        expect(primaryFocus()?.debugLabel, 'sequence_bar_next', reason: 'focus stays in the bar as the photo changes');
+
+        await press(tester, LogicalKeyboardKey.arrowLeft);
+        expect(primaryFocus()?.debugLabel, 'sequence_bar_previous');
+        await press(tester, LogicalKeyboardKey.enter);
+        expect(shownTitle(tester), 'a');
+        await press(tester, LogicalKeyboardKey.arrowLeft);
+        expect(primaryFocus()?.debugLabel, 'sequence_bar_previous', reason: 'the end of the row');
+
+        await press(tester, LogicalKeyboardKey.arrowUp);
+        expect(primaryFocus()?.debugLabel, 'photo_viewer_photo', reason: 'the label row has nothing to focus');
+        await press(tester, LogicalKeyboardKey.escape);
         expect(find.byType(PhotoSequenceViewer), findsNothing);
       });
 
@@ -311,46 +359,92 @@ void main() {
     });
   });
 
-  group('buttons', () {
-    final previousButton = find.byTooltip('Previous photo');
-    final nextButton = find.byTooltip('Next photo');
+  group('sequence bar', () {
+    double barOpacity(WidgetTester tester) => tester
+        .widgetList<AnimatedOpacity>(
+          find.ancestor(of: find.byType(SequenceControlBar), matching: find.byType(AnimatedOpacity)),
+        )
+        .first
+        .opacity;
 
-    testWidgets('show on the sides that have a photo, and move', (tester) async {
+    Future<void> tapAt(WidgetTester tester, Offset position) async {
+      await tester.tapAt(position);
+      await tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 10));
+      await tester.pumpAndSettle();
+    }
+
+    Offset edge(WidgetTester tester, {required bool left}) {
+      final photo = tester.getRect(find.byType(InteractiveViewer));
+      return Offset(left ? photo.left + 10 : photo.right - 10, photo.center.dy);
+    }
+
+    testWidgets('moves with previous and next, disabled in place at the ends, and shows where it is', (tester) async {
       await open(tester, _sequenceOf(album, 0));
-      expect(previousButton, findsNothing);
-      expect(nextButton, findsOneWidget);
+      VoidCallback? pressed(IconData icon) => tester.widget<VideoControlButton>(_barButton(icon)).onPressed;
 
-      await tester.tap(nextButton);
+      expect(find.text('1 / 5'), findsOneWidget, reason: 'positions in the album, its albums included');
+      expect(pressed(Symbols.skip_previous_rounded), isNull);
+      expect(_barButton(Symbols.play_arrow_rounded), findsNothing, reason: 'nothing plays by itself here');
+      expect(_barButton(Symbols.pause_rounded), findsNothing);
+
+      await tester.tap(_barButton(Symbols.skip_next_rounded));
       await tester.pumpAndSettle();
       expect(shownTitle(tester), 'b');
-      expect(previousButton, findsOneWidget);
-      expect(nextButton, findsOneWidget);
+      expect(find.text('3 / 5'), findsOneWidget);
 
-      await tester.tap(nextButton);
+      await tester.tap(_barButton(Symbols.skip_next_rounded));
       await tester.pumpAndSettle();
       expect(shownTitle(tester), 'c');
-      expect(nextButton, findsNothing);
+      expect(pressed(Symbols.skip_next_rounded), isNull);
 
-      await tester.tap(previousButton);
+      await tester.tap(_barButton(Symbols.skip_previous_rounded));
       await tester.pumpAndSettle();
       expect(shownTitle(tester), 'b');
     });
 
-    testWidgets('stay out of the focus order', (tester) async {
+    testWidgets('a tap near the left or right edge moves, and one in the middle hides and shows the bars', (
+      tester,
+    ) async {
       await open(tester, _sequenceOf(album, 2));
 
-      for (final button in [previousButton, nextButton]) {
-        expect(find.ancestor(of: button, matching: find.byType(ExcludeFocus)), findsOneWidget);
-      }
+      await tapAt(tester, edge(tester, left: false));
+      expect(shownTitle(tester), 'c');
+      await tapAt(tester, edge(tester, left: false));
+      expect(shownTitle(tester), 'c', reason: 'nothing past the end');
+      await tapAt(tester, edge(tester, left: true));
+      expect(shownTitle(tester), 'b');
+      expect(barOpacity(tester), 1);
+
+      await tapAt(tester, tester.getCenter(find.byType(InteractiveViewer)));
+      expect(barOpacity(tester), 0);
+      expect(shownTitle(tester), 'b');
+      await tester.pump(const Duration(seconds: 30));
+      expect(barOpacity(tester), 0, reason: 'browsing, the bars stay as the tap left them');
+
+      await tapAt(tester, edge(tester, left: true));
+      expect(shownTitle(tester), 'a', reason: 'the edges move with the bars hidden too');
+      await tapAt(tester, tester.getCenter(find.byType(InteractiveViewer)));
+      expect(barOpacity(tester), 1);
     });
 
-    testWidgets('do not show on TV', (tester) async {
-      await TvDetectionService.getInstance(forceTv: true);
-      addTearDown(TvDetectionService.debugReset);
+    testWidgets('a zoomed photo takes a tap at the edges as one in the middle', (tester) async {
       await open(tester, _sequenceOf(album, 2));
+      tester.widget<InteractiveViewer>(find.byType(InteractiveViewer)).transformationController!.value =
+          Matrix4.diagonal3Values(2, 2, 1);
+      await tester.pump();
 
-      expect(previousButton, findsNothing);
-      expect(nextButton, findsNothing);
+      await tapAt(tester, edge(tester, left: false));
+      expect(shownTitle(tester), 'b');
+      expect(barOpacity(tester), 0);
+    });
+
+    testWidgets('a photo opened on its own has no bar, only the header', (tester) async {
+      await open(tester, PhotoSequence.single(_photo('a')));
+
+      expect(find.byType(SequenceControlBar), findsNothing);
+      expect(find.byType(AppBarBackButton), findsOneWidget);
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(primaryFocus()?.debugLabel, 'photo_viewer_photo');
     });
   });
 
@@ -523,11 +617,9 @@ void main() {
     expect(calls.where((mode) => mode == 'SystemUiMode.edgeToEdge'), hasLength(1));
   });
 
-  testWidgets('a photo opened on its own has no buttons and ignores Left and Right', (tester) async {
+  testWidgets('a photo opened on its own ignores Left and Right', (tester) async {
     await open(tester, PhotoSequence.single(_photo('a')));
 
-    expect(find.byTooltip('Previous photo'), findsNothing);
-    expect(find.byTooltip('Next photo'), findsNothing);
     await press(tester, LogicalKeyboardKey.arrowRight);
     await press(tester, LogicalKeyboardKey.arrowLeft);
     expect(shownTitle(tester), 'a');
@@ -657,7 +749,7 @@ void main() {
         expect(tester.widget<AnimatedContainer>(chrome).decoration, focused);
 
         await press(tester, LogicalKeyboardKey.arrowUp);
-        expect(primaryFocus()?.debugLabel, 'photo_viewer_back');
+        expect(primaryFocus()?.debugLabel, 'photo_sequence_back');
         expect(tester.widget<AnimatedContainer>(chrome).decoration, isNot(focused));
         await press(tester, LogicalKeyboardKey.arrowDown);
         expect(primaryFocus()?.debugLabel, 'photo_viewer_play');
@@ -972,11 +1064,6 @@ void main() {
       await tester.pump();
     }
 
-    bool pausedBadge() => find
-        .byWidgetPredicate((widget) => widget is AppIcon && widget.icon == Symbols.pause_rounded)
-        .evaluate()
-        .isNotEmpty;
-
     final photos = [_photo('a'), _photo('b'), _photo('c'), _photo('d')];
 
     for (final seconds in SettingsService.photoSlideshowChoices) {
@@ -1016,17 +1103,17 @@ void main() {
         },
       ),
     ]) {
-      testWidgets('$name pauses and resumes, with a paused badge while paused', (tester) async {
+      testWidgets('$name pauses and resumes, and the bar shows it paused', (tester) async {
         await openShow(tester, photos);
 
         await wait(tester, 1);
         await toggle(tester);
-        expect(pausedBadge(), isTrue);
+        expect(_paused(), isTrue);
         await wait(tester, 20);
         expect(current(), 'a');
 
         await toggle(tester);
-        expect(pausedBadge(), isFalse);
+        expect(_paused(), isFalse);
         await wait(tester, 2.5);
         expect(current(), 'a', reason: 'resuming gives the photo a full duration');
         await wait(tester, 0.6);
@@ -1063,19 +1150,19 @@ void main() {
         await wait(tester, 1);
         await pinch(tester, 60);
         expect(scale(tester), greaterThan(1));
-        expect(pausedBadge(), isTrue);
+        expect(_paused(), isTrue);
         await wait(tester, 10);
         expect(current(), 'a');
 
         await pinch(tester, -35);
         expect(scale(tester), lessThanOrEqualTo(1));
-        expect(pausedBadge(), isTrue, reason: 'zooming out does not resume');
+        expect(_paused(), isTrue, reason: 'zooming out does not resume');
         await wait(tester, 10);
         expect(current(), 'a');
 
         await tester.tap(find.byType(InteractiveViewer));
         await tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 10));
-        expect(pausedBadge(), isFalse, reason: 'a single tap still resumes');
+        expect(_paused(), isFalse, reason: 'a single tap still resumes');
       });
 
       testWidgets('a zoom set on the photo, as a double tap sets it, pauses too', (tester) async {
@@ -1085,7 +1172,7 @@ void main() {
             Matrix4.diagonal3Values(2, 2, 1);
         await tester.pump();
 
-        expect(pausedBadge(), isTrue);
+        expect(_paused(), isTrue);
       });
 
       testWidgets('a double tap pauses only by the zoom it makes, never through the single tap', (tester) async {
@@ -1097,14 +1184,14 @@ void main() {
         await tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 10));
         // Where a double tap zooms the photo, zooming in pauses; nothing else
         // about it pauses or resumes.
-        expect(pausedBadge(), scale(tester) > 1);
+        expect(_paused(), scale(tester) > 1);
 
-        final paused = pausedBadge();
+        final paused = _paused();
         await tester.tap(find.byType(InteractiveViewer));
         await tester.pump(const Duration(milliseconds: 100));
-        expect(pausedBadge(), paused, reason: 'not before the double-tap wait is over');
+        expect(_paused(), paused, reason: 'not before the double-tap wait is over');
         await tester.pump(kDoubleTapTimeout);
-        expect(pausedBadge(), !paused);
+        expect(_paused(), !paused);
       });
     });
 
@@ -1124,7 +1211,7 @@ void main() {
       expect(current(), 'b');
       await wait(tester, 10);
       expect(current(), 'b');
-      expect(pausedBadge(), isTrue);
+      expect(_paused(), isTrue);
     });
 
     testWidgets('keeps the photo shown until the next one has loaded', (tester) async {
@@ -1212,7 +1299,7 @@ void main() {
 
       await wait(tester, 3);
       expect(current(), 'a');
-      expect(pausedBadge(), isTrue);
+      expect(_paused(), isTrue);
       expect(
         find.descendant(
           of: find.byType(SnackBar),
@@ -1222,7 +1309,7 @@ void main() {
       );
 
       await press(tester, LogicalKeyboardKey.enter);
-      expect(pausedBadge(), isFalse);
+      expect(_paused(), isFalse);
       await wait(tester, 3);
       expect(current(), 'z');
     });
@@ -1293,7 +1380,7 @@ void main() {
         expect(WakelockController.shared.isHeld, isFalse);
 
         await press(tester, LogicalKeyboardKey.enter);
-        expect(pausedBadge(), isFalse, reason: 'there is nothing left to pause');
+        expect(_paused(), isFalse, reason: 'there is nothing left to pause');
       });
 
       testWidgets('Back ends the slideshow, lets go and returns focus to where it started', (tester) async {
@@ -1373,7 +1460,7 @@ void main() {
     testWidgets('a swipe or a button counts as a move too', (tester) async {
       await open(tester, _sequenceOf(items, 0), playClip: player());
 
-      await tester.tap(find.byTooltip('Next photo'));
+      await tester.tap(_barButton(Symbols.skip_next_rounded));
       await tester.pump(const Duration(milliseconds: 200));
       // Below the play button in the middle.
       await tester.dragFrom(
@@ -1506,6 +1593,7 @@ void main() {
       int index = 1,
       _AlbumClient? albums,
       int pageSize = 200,
+      PlayClip? playClip,
     }) async {
       client = albums ?? _AlbumClient({'summer': summer});
       final sequence = show = _sequenceOf(items ?? shuffled, index);
@@ -1522,7 +1610,8 @@ void main() {
                 onPressed: () => Navigator.push<void>(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => PhotoSequenceViewer(sequence: sequence, slideshow: true, shuffle: session),
+                    builder: (_) =>
+                        PhotoSequenceViewer(sequence: sequence, slideshow: true, shuffle: session, playClip: playClip),
                   ),
                 ),
                 child: const Text('open'),
@@ -1544,11 +1633,6 @@ void main() {
     /// The item coming in, while one fades out under it.
     String onScreen(WidgetTester tester) =>
         tester.widgetList<PhotoViewerScreen>(find.byType(PhotoViewerScreen)).last.photo.id;
-
-    bool pausedBadge() => find
-        .byWidgetPredicate((widget) => widget is AppIcon && widget.icon == Symbols.pause_rounded)
-        .evaluate()
-        .isNotEmpty;
 
     Finder albumButton() => find.text('Summer');
     Finder shuffleToggle() => find.byWidgetPredicate((widget) => widget is IconButton && widget.isSelected != null);
@@ -1706,16 +1790,16 @@ void main() {
       await openShuffle(tester);
 
       await press(tester, LogicalKeyboardKey.enter);
-      expect(pausedBadge(), isTrue);
+      expect(_paused(), isTrue);
       await switchMode(tester, albumButton());
-      expect(pausedBadge(), isFalse);
+      expect(_paused(), isFalse);
       await wait(tester, 3);
       expect(onScreen(tester), 'p4');
 
       await press(tester, LogicalKeyboardKey.enter);
-      expect(pausedBadge(), isTrue);
+      expect(_paused(), isTrue);
       await switchMode(tester, shuffleToggle());
-      expect(pausedBadge(), isFalse);
+      expect(_paused(), isFalse);
       await wait(tester, 3);
       expect(onScreen(tester), 's2');
     });
@@ -1746,20 +1830,20 @@ void main() {
       expect(headerOpacity(tester), 0);
 
       await tapPhoto(tester);
-      expect(pausedBadge(), isTrue, reason: 'one tap pauses and shows the header');
+      expect(_paused(), isTrue, reason: 'one tap pauses and shows the header');
       expect(headerOpacity(tester), 1);
       await wait(tester, 20);
       expect(headerOpacity(tester), 1);
 
       await tapPhoto(tester);
-      expect(pausedBadge(), isFalse);
+      expect(_paused(), isFalse);
       await wait(tester, 3.9);
       expect(headerOpacity(tester), 1);
       await wait(tester, 0.2);
       expect(headerOpacity(tester), 0);
     });
 
-    testWidgets('on TV, Up shows and focuses the header, Left and Right move along it, and Down goes back', (
+    testWidgets('on TV, Up focuses Back, Down the bar, whose rows Left, Right, Up and Down move through', (
       tester,
     ) async {
       await TvDetectionService.getInstance(forceTv: true);
@@ -1771,42 +1855,54 @@ void main() {
 
       await press(tester, LogicalKeyboardKey.arrowUp);
       expect(headerOpacity(tester), 1);
-      expect(primaryFocus()?.debugLabel, 'photo_slideshow_album');
+      expect(primaryFocus()?.debugLabel, 'photo_sequence_back');
       expect(InputModeTracker.isKeyboardMode(tester.element(find.byType(PhotoSequenceViewer)), listen: false), isTrue);
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(primaryFocus()?.debugLabel, 'photo_viewer_photo');
 
+      await press(tester, LogicalKeyboardKey.arrowDown);
+      expect(primaryFocus()?.debugLabel, 'sequence_bar_play_pause');
       final path = <String?>[];
       for (final key in [
+        LogicalKeyboardKey.arrowDown,
+        LogicalKeyboardKey.arrowUp,
         LogicalKeyboardKey.arrowLeft,
         LogicalKeyboardKey.arrowLeft,
         LogicalKeyboardKey.arrowRight,
         LogicalKeyboardKey.arrowRight,
-        LogicalKeyboardKey.arrowRight,
+        LogicalKeyboardKey.arrowDown,
         LogicalKeyboardKey.arrowLeft,
+        LogicalKeyboardKey.arrowUp,
       ]) {
         await press(tester, key);
         path.add(primaryFocus()?.debugLabel);
       }
       expect(path, [
-        'photo_slideshow_back',
-        'photo_slideshow_back',
-        'photo_slideshow_album',
-        'photo_slideshow_shuffle',
-        'photo_slideshow_shuffle',
-        'photo_slideshow_album',
+        'sequence_bar_play_pause',
+        'sequence_bar_shuffle',
+        'sequence_bar_album',
+        'sequence_bar_album',
+        'sequence_bar_shuffle',
+        'sequence_bar_shuffle',
+        'sequence_bar_play_pause',
+        'sequence_bar_previous',
+        'sequence_bar_shuffle',
       ]);
-      expect(onScreen(tester), 'x', reason: 'Left and Right in the header do not move the slideshow');
+      expect(onScreen(tester), 'x', reason: 'moving through the bar does not move the slideshow');
       await wait(tester, 10);
-      expect(headerOpacity(tester), 1, reason: 'the header stays while it has focus');
+      expect(headerOpacity(tester), 1, reason: 'the bars stay while they have focus');
 
+      await press(tester, LogicalKeyboardKey.arrowLeft);
       await press(tester, LogicalKeyboardKey.enter);
       expect(find.text('Album · Summer · 4 / 5'), findsOneWidget);
-      expect(primaryFocus()?.debugLabel, 'photo_slideshow_shuffle');
+      expect(primaryFocus()?.debugLabel, 'sequence_bar_shuffle', reason: 'the album button gave way');
 
       await wait(tester, 30);
       expect(onScreen(tester), 'p4');
-      expect(primaryFocus()?.debugLabel, 'photo_slideshow_shuffle', reason: 'focus stays as the photo changes');
+      expect(primaryFocus()?.debugLabel, 'sequence_bar_shuffle', reason: 'focus stays as the photo changes');
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      // One frame, not a settle, so the hide delay starts with the key.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
       await tester.pump();
       expect(primaryFocus()?.debugLabel, 'photo_viewer_photo');
       await wait(tester, 3.9);
@@ -1814,14 +1910,58 @@ void main() {
       await wait(tester, 0.2);
       expect(headerOpacity(tester), 0);
 
+      await press(tester, LogicalKeyboardKey.arrowDown);
       await press(tester, LogicalKeyboardKey.arrowUp);
-      expect(primaryFocus()?.debugLabel, 'photo_slideshow_shuffle');
+      expect(primaryFocus()?.debugLabel, 'sequence_bar_shuffle');
       await press(tester, LogicalKeyboardKey.enter);
       expect(onScreen(tester), 'x');
       expect(find.text('Shuffle · Holidays'), findsOneWidget);
 
       await press(tester, LogicalKeyboardKey.escape);
       expect(find.byType(PhotoSequenceViewer), findsNothing, reason: 'Back ends the whole slideshow');
+    });
+
+    testWidgets('the player of a clip switches to its album and back in place, and the clip plays on', (tester) async {
+      final clip = _item('xc', MediaKind.clip).copyWith(parentId: 'summer', parentTitle: 'Summer', durationMs: 65000);
+      final ends = Completer<void>();
+      late PlayerSequenceLink link;
+      await openShuffle(
+        tester,
+        items: [_photo('s0'), clip, _photo('s2')],
+        albums: _AlbumClient({
+          'summer': [_photo('p0'), clip, _photo('p2')],
+        }),
+        playClip: (context, item, playing) async {
+          link = playing;
+          unawaited(ends.future.then((_) => playing.markEnded()));
+          await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => _StandInPlayer(ends: ends.future)));
+        },
+      );
+      expect(find.byType(_StandInPlayer), findsOneWidget);
+      expect(link.mode.value?.label, 'Shuffle · Holidays');
+      expect(link.mode.value?.album, 'Summer');
+
+      link.mode.value!.onOpenAlbum!();
+      await tester.pumpAndSettle();
+      expect(link.mode.value?.label, 'Album · Summer · 2 / 3');
+      expect(link.mode.value?.album, isNull, reason: 'the album button gave way');
+      expect(link.mode.value?.shuffling, isFalse);
+      expect((link.hasPrevious, link.hasNext), (true, true));
+
+      link.mode.value!.onToggleShuffle!();
+      await tester.pumpAndSettle();
+      expect(link.mode.value?.label, 'Shuffle · Holidays');
+      link.mode.value!.onOpenAlbum!();
+      await tester.pumpAndSettle();
+
+      await wait(tester, 30);
+      expect(find.byType(_StandInPlayer), findsOneWidget, reason: 'the clip plays on; the slideshow waits for it');
+      final behind = find.byType(PhotoViewerScreen, skipOffstage: false);
+      expect(tester.widgetList<PhotoViewerScreen>(behind).last.photo.id, 'xc');
+
+      ends.complete();
+      await tester.pumpAndSettle();
+      expect(onScreen(tester), 'p2', reason: 'once the clip ends, the slideshow goes on in the album');
     });
 
     testWidgets('a large album switches once the page holding the item is in, and holds the item until then', (

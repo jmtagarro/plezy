@@ -812,9 +812,8 @@
     "playTrailer": "Trailer afspelen",
     "markAsWatched": "Als bekeken markeren",
     "markAsUnwatched": "Als ongekeken markeren",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1256,6 +1255,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "Bibliotheken",
     "fallbackTitle": "Bibliotheek",
     "scanLibraryFiles": "Bibliotheekbestanden scannen",

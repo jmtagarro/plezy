@@ -812,9 +812,8 @@
     "playTrailer": "Spela trailer",
     "markAsWatched": "Markera som sedd",
     "markAsUnwatched": "Markera som osedd",
-    "previousPhoto": "",
-    "nextPhoto": "",
-    "slideshowPaused": "",
+    "previousItem": "",
+    "nextItem": "",
     "playPhotoAlbum": "",
     "backToShuffle": ""
   },
@@ -1256,6 +1255,7 @@
   "libraries": {
     "slideshowShuffleMode": "",
     "slideshowAlbumMode": "",
+    "photoPosition": "",
     "title": "Bibliotek",
     "fallbackTitle": "Bibliotek",
     "scanLibraryFiles": "Skanna biblioteksfiler",
