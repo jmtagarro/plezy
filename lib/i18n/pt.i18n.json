@@ -814,7 +814,9 @@
     "markAsUnwatched": "Marcar como não assistido",
     "previousPhoto": "",
     "nextPhoto": "",
-    "slideshowPaused": ""
+    "slideshowPaused": "",
+    "playPhotoAlbum": "",
+    "backToShuffle": ""
   },
   "audioTracks": {
     "track": "Faixa de áudio ${n}"
@@ -1252,6 +1254,8 @@
     "reasonUnexpected": "ocorreu um erro inesperado"
   },
   "libraries": {
+    "slideshowShuffleMode": "",
+    "slideshowAlbumMode": "",
     "title": "Bibliotecas",
     "fallbackTitle": "Biblioteca",
     "scanLibraryFiles": "Escanear Arquivos da Biblioteca",

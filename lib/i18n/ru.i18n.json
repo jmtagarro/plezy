@@ -820,7 +820,9 @@
     "markAsUnwatched": "Отметить как непросмотренное",
     "previousPhoto": "",
     "nextPhoto": "",
-    "slideshowPaused": ""
+    "slideshowPaused": "",
+    "playPhotoAlbum": "",
+    "backToShuffle": ""
   },
   "audioTracks": {
     "track": "Аудиодорожка ${n}"
@@ -1262,6 +1264,8 @@
     "reasonUnexpected": "произошла непредвиденная ошибка"
   },
   "libraries": {
+    "slideshowShuffleMode": "",
+    "slideshowAlbumMode": "",
     "title": "Библиотеки",
     "fallbackTitle": "Библиотека",
     "scanLibraryFiles": "Сканировать файлы библиотеки",

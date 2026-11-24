@@ -14,6 +14,7 @@ import 'package:plezy/focus/input_mode_tracker.dart';
 import 'package:plezy/focus/key_event_utils.dart';
 import 'package:plezy/i18n/strings.g.dart';
 import 'package:plezy/media/ids.dart';
+import 'package:plezy/media/library_query.dart';
 import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_item.dart';
 import 'package:plezy/media/media_kind.dart';
@@ -25,11 +26,14 @@ import 'package:plezy/screens/photo_viewer_screen.dart';
 import 'package:plezy/screens/video_player/player_sequence_link.dart';
 import 'package:plezy/screens/video_player/wakelock_controller.dart';
 import 'package:plezy/services/device_performance.dart';
+import 'package:plezy/services/photo_shuffle/photo_shuffle_album.dart';
 import 'package:plezy/services/settings_service.dart';
 import 'package:plezy/theme/mono_theme.dart';
 import 'package:plezy/utils/immersive_mode_guard.dart';
+import 'package:plezy/utils/media_server_http_client.dart';
 import 'package:plezy/utils/orientation_helper.dart';
 import 'package:plezy/utils/platform_detector.dart';
+import 'package:plezy/widgets/app_bar_back_button.dart';
 import 'package:plezy/widgets/app_icon.dart';
 import 'package:provider/provider.dart';
 
@@ -1468,6 +1472,408 @@ void main() {
       expect(played, isEmpty);
     });
   });
+
+  group('shuffle', () {
+    final loaded = <String>[];
+    final gates = <String, Completer<void>>{};
+
+    setUp(() async {
+      loaded.clear();
+      gates.clear();
+      resetSharedPreferencesForTest(initialAsync: const {'photo_slideshow_seconds': 3, 'photo_clip_autoplay': false});
+      await SettingsService.getInstance();
+      PhotoSequenceViewer.debugLoadsOverride = (item) async {
+        loaded.add(item.id);
+        await gates[item.id]?.future;
+        return true;
+      };
+    });
+    tearDown(() => PhotoSequenceViewer.debugLoadsOverride = null);
+
+    MediaItem inSummer(String id) => _photo(id).copyWith(parentId: 'summer', parentTitle: 'Summer');
+
+    final x = inSummer('x').copyWith(grandparentId: 'years', grandparentTitle: 'Years');
+    final summer = [_photo('p0'), _item('sub', MediaKind.photoAlbum), _photo('p2'), x, _photo('p4')];
+    final shuffled = [_photo('s0'), x, _photo('s2'), _photo('s3')];
+
+    /// The shuffle sequence of the slideshow open.
+    late PhotoSequence show;
+    late _AlbumClient client;
+
+    Future<void> openShuffle(
+      WidgetTester tester, {
+      List<MediaItem>? items,
+      int index = 1,
+      _AlbumClient? albums,
+      int pageSize = 200,
+    }) async {
+      client = albums ?? _AlbumClient({'summer': summer});
+      final sequence = show = _sequenceOf(items ?? shuffled, index);
+      final session = PhotoShuffleSession(
+        scope: 'Holidays',
+        albums: PhotoShuffleAlbums(client: client, pageSize: pageSize),
+      );
+      await tester.pumpWidget(
+        wrap(
+          Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                autofocus: true,
+                onPressed: () => Navigator.push<void>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PhotoSequenceViewer(sequence: sequence, slideshow: true, shuffle: session),
+                  ),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> wait(WidgetTester tester, num seconds) async {
+      await tester.pump(Duration(milliseconds: (seconds * 1000).round()));
+      await tester.pump();
+    }
+
+    /// The item coming in, while one fades out under it.
+    String onScreen(WidgetTester tester) =>
+        tester.widgetList<PhotoViewerScreen>(find.byType(PhotoViewerScreen)).last.photo.id;
+
+    bool pausedBadge() => find
+        .byWidgetPredicate((widget) => widget is AppIcon && widget.icon == Symbols.pause_rounded)
+        .evaluate()
+        .isNotEmpty;
+
+    Finder albumButton() => find.text('Summer');
+    Finder shuffleToggle() => find.byWidgetPredicate((widget) => widget is IconButton && widget.isSelected != null);
+    bool shuffling(WidgetTester tester) => tester.widget<IconButton>(shuffleToggle()).isSelected!;
+
+    double headerOpacity(WidgetTester tester) => tester
+        .widgetList<AnimatedOpacity>(
+          find.ancestor(of: find.byType(AppBarBackButton), matching: find.byType(AnimatedOpacity)),
+        )
+        .first
+        .opacity;
+
+    Future<void> tapPhoto(WidgetTester tester) async {
+      await tester.tap(find.byType(InteractiveViewer).last);
+      await tester.pump(kDoubleTapTimeout + const Duration(milliseconds: 10));
+    }
+
+    Future<void> switchMode(WidgetTester tester, Finder button) async {
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the header names the shuffle and offers the album the item is directly in', (tester) async {
+      await openShuffle(tester);
+
+      expect(find.text('x'), findsOneWidget);
+      expect(find.text('Shuffle · Holidays'), findsOneWidget);
+      expect(albumButton(), findsOneWidget);
+      expect(find.text('Years'), findsNothing, reason: 'never a grandparent');
+      expect(shuffling(tester), isTrue);
+
+      await wait(tester, 3);
+      expect(onScreen(tester), 's2');
+      expect(albumButton(), findsNothing, reason: 's2 has no album');
+      expect(tester.widget<IconButton>(shuffleToggle()).onPressed, isNull);
+      expect(find.text('Shuffle · Holidays'), findsOneWidget);
+    });
+
+    testWidgets('an album the item does not name is looked up, as for Jellyfin folders', (tester) async {
+      final unnamed = _photo('x').copyWith(parentId: 'summer');
+      await openShuffle(
+        tester,
+        items: [_photo('s0'), unnamed, _photo('s2')],
+        albums: _AlbumClient(
+          {'summer': summer},
+          items: {'summer': _item('summer', MediaKind.folder).copyWith(title: 'Summer')},
+        ),
+      );
+
+      expect(albumButton(), findsOneWidget);
+      expect(client.lookedUp, ['summer']);
+    });
+
+    testWidgets('switching to the album keeps the item on screen as it is, and goes through the album in its order', (
+      tester,
+    ) async {
+      await openShuffle(tester);
+      final viewer = tester.state(find.byType(PhotoViewerScreen));
+      final loadsOfX = loaded.where((id) => id == 'x').length;
+
+      await wait(tester, 1);
+      await switchMode(tester, albumButton());
+
+      expect(identical(tester.state(find.byType(PhotoViewerScreen)), viewer), isTrue);
+      expect(loaded.where((id) => id == 'x'), hasLength(loadsOfX), reason: 'the item is not loaded again');
+      expect(find.text('Album · Summer · 4 / 5'), findsOneWidget);
+      expect(albumButton(), findsNothing);
+      expect(shuffling(tester), isFalse);
+      expect((show.index, show.photo.id), (1, 'x'), reason: 'the shuffle stays where it was left');
+
+      final order = <String>[];
+      for (var i = 0; i < 5; i++) {
+        await wait(tester, 3);
+        order.add(onScreen(tester));
+      }
+      expect(order, ['p4', 'p0', 'p2', 'x', 'p4'], reason: 'past the last comes the first, the sub-album skipped');
+      expect(find.text('Album · Summer · 5 / 5'), findsOneWidget);
+      expect((show.index, show.photo.id), (1, 'x'));
+    });
+
+    testWidgets('in the album, previous from the first item goes to the last, and next from there to the first', (
+      tester,
+    ) async {
+      await openShuffle(
+        tester,
+        albums: _AlbumClient({
+          'summer': [x, _photo('p1'), _item('sub', MediaKind.photoAlbum), _photo('p3')],
+        }),
+      );
+      await switchMode(tester, albumButton());
+      expect(find.text('Album · Summer · 1 / 4'), findsOneWidget);
+      expect(primaryFocus()?.debugLabel, 'photo_viewer_photo');
+
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      expect(onScreen(tester), 'p3');
+      expect(find.text('Album · Summer · 4 / 4'), findsOneWidget);
+
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(onScreen(tester), 'x');
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      expect(onScreen(tester), 'p1');
+    });
+
+    testWidgets('on the last item of the album, the first is loaded ahead, and shown once it has loaded', (
+      tester,
+    ) async {
+      await openShuffle(
+        tester,
+        albums: _AlbumClient({
+          'summer': [_photo('p0'), _photo('p1'), x],
+        }),
+      );
+      final p0 = gates['p0'] = Completer<void>();
+      await switchMode(tester, albumButton());
+
+      expect(find.text('Album · Summer · 3 / 3'), findsOneWidget);
+      expect(loaded, contains('p0'));
+
+      await wait(tester, 5);
+      expect(onScreen(tester), 'x', reason: 'the first item has not loaded yet');
+
+      p0.complete();
+      await tester.pumpAndSettle();
+      expect(onScreen(tester), 'p0');
+      expect(find.text('Album · Summer · 1 / 3'), findsOneWidget);
+    });
+
+    testWidgets(
+      'back to shuffle returns to the item it was left at, goes on with the next one, and keeps the history',
+      (tester) async {
+        await openShuffle(tester, index: 0);
+        await wait(tester, 3);
+        expect(onScreen(tester), 'x');
+
+        await switchMode(tester, albumButton());
+        await wait(tester, 3);
+        expect(onScreen(tester), 'p4');
+
+        await switchMode(tester, shuffleToggle());
+        expect(onScreen(tester), 'x');
+        expect(shuffling(tester), isTrue);
+        expect(find.text('Shuffle · Holidays'), findsOneWidget);
+        expect(albumButton(), findsOneWidget);
+
+        await wait(tester, 3);
+        expect(onScreen(tester), 's2', reason: 'the next shuffled item, nothing repeated');
+        await press(tester, LogicalKeyboardKey.arrowLeft);
+        expect(onScreen(tester), 'x');
+        await press(tester, LogicalKeyboardKey.arrowLeft);
+        expect(onScreen(tester), 's0');
+      },
+    );
+
+    testWidgets('switching to the album or back to shuffle resumes a paused slideshow', (tester) async {
+      await openShuffle(tester);
+
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(pausedBadge(), isTrue);
+      await switchMode(tester, albumButton());
+      expect(pausedBadge(), isFalse);
+      await wait(tester, 3);
+      expect(onScreen(tester), 'p4');
+
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(pausedBadge(), isTrue);
+      await switchMode(tester, shuffleToggle());
+      expect(pausedBadge(), isFalse);
+      await wait(tester, 3);
+      expect(onScreen(tester), 's2');
+    });
+
+    testWidgets('an album that cannot be opened is no longer offered, and the shuffle goes on', (tester) async {
+      await openShuffle(tester, albums: _AlbumClient({'summer': summer}, failing: {'summer'}));
+
+      await switchMode(tester, albumButton());
+
+      expect(albumButton(), findsNothing);
+      expect(find.text('Shuffle · Holidays'), findsOneWidget);
+      expect(tester.widget<IconButton>(shuffleToggle()).onPressed, isNull);
+      await wait(tester, 3);
+      expect(onScreen(tester), 's2');
+    });
+
+    testWidgets('the header hides after 4 s without input while playing, and shows while paused', (tester) async {
+      await SettingsService.instance.write(SettingsService.photoSlideshowSeconds, 30);
+      await openShuffle(tester);
+      expect(headerOpacity(tester), 1);
+
+      // Any input starts the wait again.
+      await tester.sendKeyEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+      await wait(tester, 3.9);
+      expect(headerOpacity(tester), 1);
+      await wait(tester, 0.2);
+      expect(headerOpacity(tester), 0);
+
+      await tapPhoto(tester);
+      expect(pausedBadge(), isTrue, reason: 'one tap pauses and shows the header');
+      expect(headerOpacity(tester), 1);
+      await wait(tester, 20);
+      expect(headerOpacity(tester), 1);
+
+      await tapPhoto(tester);
+      expect(pausedBadge(), isFalse);
+      await wait(tester, 3.9);
+      expect(headerOpacity(tester), 1);
+      await wait(tester, 0.2);
+      expect(headerOpacity(tester), 0);
+    });
+
+    testWidgets('on TV, Up shows and focuses the header, Left and Right move along it, and Down goes back', (
+      tester,
+    ) async {
+      await TvDetectionService.getInstance(forceTv: true);
+      addTearDown(TvDetectionService.debugReset);
+      await SettingsService.instance.write(SettingsService.photoSlideshowSeconds, 30);
+      await openShuffle(tester);
+      await wait(tester, 4.1);
+      expect(headerOpacity(tester), 0);
+
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      expect(headerOpacity(tester), 1);
+      expect(primaryFocus()?.debugLabel, 'photo_slideshow_album');
+      expect(InputModeTracker.isKeyboardMode(tester.element(find.byType(PhotoSequenceViewer)), listen: false), isTrue);
+
+      final path = <String?>[];
+      for (final key in [
+        LogicalKeyboardKey.arrowLeft,
+        LogicalKeyboardKey.arrowLeft,
+        LogicalKeyboardKey.arrowRight,
+        LogicalKeyboardKey.arrowRight,
+        LogicalKeyboardKey.arrowRight,
+        LogicalKeyboardKey.arrowLeft,
+      ]) {
+        await press(tester, key);
+        path.add(primaryFocus()?.debugLabel);
+      }
+      expect(path, [
+        'photo_slideshow_back',
+        'photo_slideshow_back',
+        'photo_slideshow_album',
+        'photo_slideshow_shuffle',
+        'photo_slideshow_shuffle',
+        'photo_slideshow_album',
+      ]);
+      expect(onScreen(tester), 'x', reason: 'Left and Right in the header do not move the slideshow');
+      await wait(tester, 10);
+      expect(headerOpacity(tester), 1, reason: 'the header stays while it has focus');
+
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(find.text('Album · Summer · 4 / 5'), findsOneWidget);
+      expect(primaryFocus()?.debugLabel, 'photo_slideshow_shuffle');
+
+      await wait(tester, 30);
+      expect(onScreen(tester), 'p4');
+      expect(primaryFocus()?.debugLabel, 'photo_slideshow_shuffle', reason: 'focus stays as the photo changes');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(primaryFocus()?.debugLabel, 'photo_viewer_photo');
+      await wait(tester, 3.9);
+      expect(headerOpacity(tester), 1);
+      await wait(tester, 0.2);
+      expect(headerOpacity(tester), 0);
+
+      await press(tester, LogicalKeyboardKey.arrowUp);
+      expect(primaryFocus()?.debugLabel, 'photo_slideshow_shuffle');
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(onScreen(tester), 'x');
+      expect(find.text('Shuffle · Holidays'), findsOneWidget);
+
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(find.byType(PhotoSequenceViewer), findsNothing, reason: 'Back ends the whole slideshow');
+    });
+
+    testWidgets('a large album switches once the page holding the item is in, and holds the item until then', (
+      tester,
+    ) async {
+      final big = [_photo('p0'), _photo('p1'), x, _photo('p3'), _photo('p4'), _photo('p5')];
+      final albums = _AlbumClient({'summer': big});
+      final xPage = albums.held['summer@2'] = Completer<void>();
+      final lastPage = albums.held['summer@4'] = Completer<void>();
+      await openShuffle(tester, albums: albums, pageSize: 2);
+
+      await tester.tap(albumButton());
+      await wait(tester, 5);
+      expect(onScreen(tester), 'x');
+      expect(find.text('Shuffle · Holidays'), findsOneWidget, reason: 'still loading the page with the item');
+
+      xPage.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('Album · Summer · 3 / 6'), findsOneWidget, reason: 'the total comes from the server');
+      expect(client.fetched, ['summer@0', 'summer@2', 'summer@4']);
+
+      await wait(tester, 3);
+      expect(onScreen(tester), 'p3');
+      await wait(tester, 5);
+      expect(onScreen(tester), 'p3', reason: 'the next page is still loading');
+
+      lastPage.complete();
+      await tester.pumpAndSettle();
+      expect(onScreen(tester), 'p4');
+      expect(find.text('Album · Summer · 5 / 6'), findsOneWidget);
+    });
+
+    testWidgets('going round a large album waits for the pages still loading', (tester) async {
+      final big = [x, _photo('p1'), _photo('p2'), _photo('p3'), _photo('p4'), _photo('p5')];
+      final albums = _AlbumClient({'summer': big});
+      final middle = albums.held['summer@2'] = Completer<void>();
+      final last = albums.held['summer@4'] = Completer<void>();
+      await openShuffle(tester, albums: albums, pageSize: 2);
+
+      await switchMode(tester, albumButton());
+      expect(find.text('Album · Summer · 1 / 6'), findsOneWidget, reason: 'switched with only the first page in');
+
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      expect(onScreen(tester), 'x', reason: 'the last page is still loading');
+
+      last.complete();
+      await tester.pumpAndSettle();
+      expect(onScreen(tester), 'p5');
+      expect(find.text('Album · Summer · 6 / 6'), findsOneWidget);
+      middle.complete();
+    });
+  });
 }
 
 /// Answers image requests with a URL naming the path and size, and records
@@ -1540,4 +1946,47 @@ class _StandInPlayerState extends State<_StandInPlayer> {
     onKeyEvent: (_, event) => handleBackKeyNavigation(context, event),
     child: const Scaffold(body: Text('player')),
   );
+}
+
+/// Albums by id, paged as a server pages them, and the items [fetchItem]
+/// knows. A page whose start is in [held] waits until it is completed; the
+/// albums in [failing] cannot be read.
+class _AlbumClient implements MediaServerClient {
+  _AlbumClient(this.albums, {this.items = const {}, this.failing = const {}});
+
+  final Map<String, List<MediaItem>> albums;
+  final Map<String, MediaItem> items;
+  final Set<String> failing;
+  final Map<String, Completer<void>> held = {};
+  final fetched = <String>[];
+  final lookedUp = <String>[];
+
+  @override
+  ServerId get serverId => ServerId('server_1');
+
+  @override
+  Future<LibraryPage<MediaItem>> fetchChildrenPage(
+    String parentId, {
+    int? start,
+    int? size,
+    AbortController? abort,
+  }) async {
+    final key = '$parentId@${start ?? 0}';
+    fetched.add(key);
+    await held[key]?.future;
+    if (failing.contains(parentId)) throw StateError('cannot read $parentId');
+    final all = albums[parentId] ?? const [];
+    final from = (start ?? 0).clamp(0, all.length);
+    final to = (from + (size ?? all.length)).clamp(0, all.length);
+    return LibraryPage(items: all.sublist(from, to), totalCount: all.length, offset: from);
+  }
+
+  @override
+  Future<MediaItem?> fetchItem(String id) async {
+    lookedUp.add(id);
+    return items[id];
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

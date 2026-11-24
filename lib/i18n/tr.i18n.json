@@ -814,7 +814,9 @@
     "markAsUnwatched": "İzlenmedi olarak işaretle",
     "previousPhoto": "",
     "nextPhoto": "",
-    "slideshowPaused": ""
+    "slideshowPaused": "",
+    "playPhotoAlbum": "",
+    "backToShuffle": ""
   },
   "audioTracks": {
     "track": "Ses Parçası ${n}"
@@ -1252,6 +1254,8 @@
     "reasonUnexpected": "beklenmeyen bir hata oluştu"
   },
   "libraries": {
+    "slideshowShuffleMode": "",
+    "slideshowAlbumMode": "",
     "title": "Kitaplıklar",
     "fallbackTitle": "Kitaplık",
     "scanLibraryFiles": "Kitaplık Dosyalarını Tarayınız",

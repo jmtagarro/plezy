@@ -814,7 +814,9 @@
     "markAsUnwatched": "Көрілмеді деп белгілеу",
     "previousPhoto": "",
     "nextPhoto": "",
-    "slideshowPaused": ""
+    "slideshowPaused": "",
+    "playPhotoAlbum": "",
+    "backToShuffle": ""
   },
   "audioTracks": {
     "track": "Аудиожол ${n}"
@@ -1252,6 +1254,8 @@
     "reasonUnexpected": "күтпеген қате орын алды"
   },
   "libraries": {
+    "slideshowShuffleMode": "",
+    "slideshowAlbumMode": "",
     "title": "Кітапханалар",
     "fallbackTitle": "Кітапхана",
     "scanLibraryFiles": "Файлдарды сканерлеу",

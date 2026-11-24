@@ -4,7 +4,9 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:plezy/database/app_database.dart';
+import 'package:plezy/media/media_backend.dart';
 import 'package:plezy/media/media_kind.dart';
+import 'package:plezy/media/media_library.dart';
 import 'package:plezy/services/photo_shuffle/media_browser_photo_shuffle_source.dart';
 import 'package:plezy/services/photo_shuffle/photo_shuffle_launcher.dart';
 import 'package:plezy/services/photo_shuffle/photo_shuffle_source.dart';
@@ -147,5 +149,33 @@ void main() {
     addTearDown(client.close);
 
     expect(await PhotoShuffleLauncher.open(client, album), isNull);
+  });
+
+  test('the slideshow names what it shuffles, and knows the library whose root holds no album', () {
+    final client = testJellyfinClient(handler: (request) async => _json({}));
+    final library = MediaLibrary(
+      id: 'lib',
+      backend: MediaBackend.jellyfin,
+      title: 'Photos',
+      kind: MediaKind.photo,
+      serverId: 'server-1',
+    );
+    final named = PhotoShuffleAlbum(
+      testMediaItem(id: '700', kind: MediaKind.photoAlbum, serverId: 'server-1', title: 'Summer', libraryId: 'lib'),
+    );
+
+    final ofLibrary = PhotoShuffleLauncher.session(client, PhotoShuffleLibrary(library));
+    final ofAlbum = PhotoShuffleLauncher.session(client, named);
+    final ofFolder = PhotoShuffleLauncher.session(
+      client,
+      PhotoShuffleFolder(
+        testMediaItem(id: 'f', kind: MediaKind.folder, title: 'Trip'),
+        libraryId: 'lib',
+      ),
+    );
+
+    expect((ofLibrary.scope, ofLibrary.albums.libraryId), ('Photos', 'lib'));
+    expect((ofAlbum.scope, ofAlbum.albums.libraryId), ('Summer', 'lib'));
+    expect((ofFolder.scope, ofFolder.albums.libraryId), ('Trip', 'lib'));
   });
 }

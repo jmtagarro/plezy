@@ -811,7 +811,9 @@
     "markAsUnwatched": "미시청으로 표시",
     "previousPhoto": "",
     "nextPhoto": "",
-    "slideshowPaused": ""
+    "slideshowPaused": "",
+    "playPhotoAlbum": "",
+    "backToShuffle": ""
   },
   "audioTracks": {
     "track": "오디오 트랙 ${n}"
@@ -1247,6 +1249,8 @@
     "reasonUnexpected": "예기치 않은 오류가 발생했습니다"
   },
   "libraries": {
+    "slideshowShuffleMode": "",
+    "slideshowAlbumMode": "",
     "title": "미디어 라이브러리",
     "fallbackTitle": "라이브러리",
     "scanLibraryFiles": "미디어 라이브러리 파일 스캔",

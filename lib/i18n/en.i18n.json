@@ -814,7 +814,9 @@
     "markAsUnwatched": "Mark as unwatched",
     "previousPhoto": "Previous photo",
     "nextPhoto": "Next photo",
-    "slideshowPaused": "Slideshow paused"
+    "slideshowPaused": "Slideshow paused",
+    "playPhotoAlbum": "Play this album in order",
+    "backToShuffle": "Back to shuffle"
   },
   "audioTracks": {
     "track": "Audio Track ${n}"
@@ -1252,6 +1254,8 @@
     "reasonUnexpected": "an unexpected error occurred"
   },
   "libraries": {
+    "slideshowShuffleMode": "Shuffle · ${scope}",
+    "slideshowAlbumMode": "Album · ${name} · ${index} / ${total}",
     "title": "Libraries",
     "fallbackTitle": "Library",
     "scanLibraryFiles": "Scan Library Files",

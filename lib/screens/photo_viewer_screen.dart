@@ -54,6 +54,20 @@ class PhotoViewerScreen extends StatefulWidget {
     if (url.isEmpty) return null;
     return (url: url, image: MediaImageHelper.serverArtworkProvider(imageUrl: url, memWidth: edge, memHeight: edge));
   }
+
+  /// The photo's own title, or its album's when it has none.
+  static String titleOf(MediaItem photo) {
+    final title = photo.title;
+    if (title != null && title.isNotEmpty) return title;
+    return photo.parentTitle ?? '';
+  }
+
+  /// When the photo was taken, as the server reports it. Shown only: imports
+  /// such as Google Takeout can carry the import date instead.
+  static String? dateLabelOf(MediaItem photo) {
+    final date = photo.originallyAvailableAt;
+    return date == null || date.isEmpty ? null : formatFullDate(date);
+  }
 }
 
 class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
@@ -101,7 +115,11 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
     super.initState();
     _transformation.addListener(_onZoomChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _entryFocusNode.requestFocus();
+      if (!mounted) return;
+      final header = _navigation?.header;
+      // Focus in a slideshow's header stays there as the photos change.
+      if (header?.hasFocus() != true) _entryFocusNode.requestFocus();
+      header?.attachPhoto(this, _entryFocusNode.requestFocus);
     });
   }
 
@@ -130,6 +148,7 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
         }),
       );
     }
+    _navigation?.header?.detachPhoto(this);
     for (final MapEntry(key: url, value: image) in _screenImages.entries) {
       // The sequence keeps the photos next to the one it shows.
       if (_navigation?.keepsImage(url) != true) unawaited(image.evict());
@@ -180,29 +199,23 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
     );
   }
 
-  /// The photo's own title, or its album's when it has none.
-  String get _title {
-    final title = widget.photo.title;
-    if (title != null && title.isNotEmpty) return title;
-    return widget.photo.parentTitle ?? '';
-  }
+  String get _title => PhotoViewerScreen.titleOf(widget.photo);
 
-  /// When the photo was taken, as the server reports it. Shown only: imports
-  /// such as Google Takeout can carry the import date instead.
-  String? get _dateLabel {
-    final date = widget.photo.originallyAvailableAt;
-    return date == null || date.isEmpty ? null : formatFullDate(date);
-  }
+  String? get _dateLabel => PhotoViewerScreen.dateLabelOf(widget.photo);
 
-  /// Up and Down move between the photo and the back button. Left and Right
-  /// move to the previous and next photo of the sequence, once per press, as
+  /// Up and Down move between the photo and the back button, or the header a
+  /// slideshow draws in its place. Left and Right move to the previous and
+  /// next photo of the sequence, once per press, as
   /// each photo is a new request to the server. They are consumed either way,
   /// so they cannot wander off to the back button.
   KeyEventResult _handleKeyEvent(KeyEvent event) {
     final key = event.logicalKey;
     if (!key.isDpadDirection) return handleBackKeyNavigation(context, event);
     if (event.isActionable) {
-      if (key == LogicalKeyboardKey.arrowUp) _backFocusNode.requestFocus();
+      if (key == LogicalKeyboardKey.arrowUp) {
+        final header = _navigation?.header;
+        header != null ? header.focus() : _backFocusNode.requestFocus();
+      }
       if (key == LogicalKeyboardKey.arrowDown) _entryFocusNode.requestFocus();
     }
     if (event is KeyDownEvent) {
@@ -320,41 +333,43 @@ class _PhotoViewerScreenState extends State<PhotoViewerScreen> {
               ),
             ),
             if (_isClip) Positioned.fill(child: _buildPlayButton(context)),
-            const Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 96,
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.black54, Colors.transparent],
+            if (_navigation?.header == null)
+              const Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 96,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.black54, Colors.transparent],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                bottom: false,
-                child: Row(
-                  children: [
-                    AppBarBackButton(focusNode: _backFocusNode),
-                    Expanded(
-                      // Pinches that start on the title still reach the photo.
-                      child: IgnorePointer(child: _buildHeaderText(context)),
-                    ),
-                    const SizedBox(width: 16),
-                  ],
+            if (_navigation?.header == null)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: SafeArea(
+                  bottom: false,
+                  child: Row(
+                    children: [
+                      AppBarBackButton(focusNode: _backFocusNode),
+                      Expanded(
+                        // Pinches that start on the title still reach the photo.
+                        child: IgnorePointer(child: _buildHeaderText(context)),
+                      ),
+                      const SizedBox(width: 16),
+                    ],
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),

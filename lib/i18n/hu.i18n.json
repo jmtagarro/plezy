@@ -814,7 +814,9 @@
     "markAsUnwatched": "Megjelölés nem megtekintettként",
     "previousPhoto": "",
     "nextPhoto": "",
-    "slideshowPaused": ""
+    "slideshowPaused": "",
+    "playPhotoAlbum": "",
+    "backToShuffle": ""
   },
   "audioTracks": {
     "track": "${n}. hangsáv"
@@ -1252,6 +1254,8 @@
     "reasonUnexpected": "váratlan hiba történt"
   },
   "libraries": {
+    "slideshowShuffleMode": "",
+    "slideshowAlbumMode": "",
     "title": "Könyvtárak",
     "fallbackTitle": "Könyvtár",
     "scanLibraryFiles": "Könyvtárfájlok beolvasása",

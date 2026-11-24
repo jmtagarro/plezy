@@ -814,7 +814,9 @@
     "markAsUnwatched": "Baxılmadı olaraq işarələ",
     "previousPhoto": "",
     "nextPhoto": "",
-    "slideshowPaused": ""
+    "slideshowPaused": "",
+    "playPhotoAlbum": "",
+    "backToShuffle": ""
   },
   "audioTracks": {
     "track": "Səs zolağı ${n}"
@@ -1252,6 +1254,8 @@
     "reasonUnexpected": "gözlənilməz xəta baş verdi"
   },
   "libraries": {
+    "slideshowShuffleMode": "",
+    "slideshowAlbumMode": "",
     "title": "Kitabxanalar",
     "fallbackTitle": "Kitabxana",
     "scanLibraryFiles": "Kitabxana fayllarını skan et",

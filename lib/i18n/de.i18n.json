@@ -814,7 +814,9 @@
     "markAsUnwatched": "Als ungesehen markieren",
     "previousPhoto": "",
     "nextPhoto": "",
-    "slideshowPaused": ""
+    "slideshowPaused": "",
+    "playPhotoAlbum": "",
+    "backToShuffle": ""
   },
   "audioTracks": {
     "track": "Audiospur ${n}"
@@ -1252,6 +1254,8 @@
     "reasonUnexpected": "ein unerwarteter Fehler ist aufgetreten"
   },
   "libraries": {
+    "slideshowShuffleMode": "",
+    "slideshowAlbumMode": "",
     "title": "Mediatheken",
     "fallbackTitle": "Mediathek",
     "scanLibraryFiles": "Mediatheksdateien scannen",

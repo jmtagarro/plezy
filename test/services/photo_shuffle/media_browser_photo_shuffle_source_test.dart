@@ -31,7 +31,13 @@ class _RandomItems {
         jsonEncode({
           'Items': [
             for (final id in ids)
-              {'Id': id, 'Name': id, 'Type': id.startsWith('v') ? 'Video' : 'Photo', 'ServerId': 'server'},
+              {
+                'Id': id,
+                'Name': id,
+                'Type': id.startsWith('v') ? 'Video' : 'Photo',
+                'ServerId': 'server',
+                'ParentId': 'folder-$id',
+              },
           ],
           'TotalRecordCount': total,
           'StartIndex': int.parse(request.url.queryParameters['StartIndex'] ?? '0'),
@@ -70,6 +76,22 @@ void main() {
     expect(first['StartIndex'], '0');
     expect(first['Limit'], '2');
     expect(server.requests[1].url.queryParameters['StartIndex'], '2');
+  });
+
+  test('asks for the folder each item is directly in, so the slideshow can open it', () async {
+    final server = _RandomItems([
+      ['a', 'v1'],
+    ], total: 2);
+    final source = MediaBrowserPhotoShuffleSource(
+      client: testJellyfinClient(handler: server.handle),
+      target: album,
+    );
+
+    expect(await source.start(), isTrue);
+
+    expect(server.requests.first.url.queryParameters['Fields']?.split(','), contains('ParentId'));
+    expect(source.itemAt(0)?.parentId, 'folder-a');
+    expect(source.itemAt(1)?.parentId, 'folder-v1');
   });
 
   test('drops repeats, and ends once every item has been seen', () async {

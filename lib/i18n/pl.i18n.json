@@ -820,7 +820,9 @@
     "markAsUnwatched": "Oznacz jako nieobejrzane",
     "previousPhoto": "",
     "nextPhoto": "",
-    "slideshowPaused": ""
+    "slideshowPaused": "",
+    "playPhotoAlbum": "",
+    "backToShuffle": ""
   },
   "audioTracks": {
     "track": "Ścieżka audio ${n}"
@@ -1262,6 +1264,8 @@
     "reasonUnexpected": "wystąpił nieoczekiwany błąd"
   },
   "libraries": {
+    "slideshowShuffleMode": "",
+    "slideshowAlbumMode": "",
     "title": "Biblioteki",
     "fallbackTitle": "Biblioteka",
     "scanLibraryFiles": "Skanuj pliki biblioteki",

@@ -6,13 +6,15 @@ import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../focus/dpad_navigator.dart';
-
+import '../focus/focusable_button.dart';
+import '../focus/key_event_utils.dart';
 import '../i18n/strings.g.dart';
 import '../media/ids.dart';
 import '../media/media_item.dart';
 import '../media/media_item_types.dart';
 import '../media/media_kind.dart';
 import '../services/device_performance.dart';
+import '../services/photo_shuffle/photo_shuffle_album.dart';
 import '../services/settings_service.dart';
 import '../utils/app_logger.dart';
 import '../utils/snackbar_helper.dart';
@@ -21,6 +23,7 @@ import '../utils/provider_extensions.dart';
 import '../utils/video_player_navigation.dart';
 import 'video_player/player_sequence_link.dart';
 import 'video_player/wakelock_controller.dart';
+import '../widgets/app_bar_back_button.dart';
 import '../widgets/app_icon.dart';
 import 'photo_viewer_screen.dart';
 
@@ -37,6 +40,7 @@ class PhotoSequence {
     required this._itemAt,
     required this._loadItemAt,
     this.onShown,
+    this.loops = false,
   });
 
   /// [photo] on its own, with nothing before or after it.
@@ -62,10 +66,19 @@ class PhotoSequence {
   /// in windows can fetch the next one ahead of time.
   final void Function(int index)? onShown;
 
+  /// Goes on from the last item to the first, and back from the first to the
+  /// last.
+  final bool loops;
+
+  /// Positions in the list, albums included.
+  int get length => _length();
+
   /// The nearest photo or clip from [from] in the direction of [step] (-1 or 1),
   /// loading the list as it goes, and passing over the items [skip] names.
-  /// Null at the end of the list, or when part of it cannot be loaded.
+  /// Null at the end of a list that does not loop, when nothing else in a
+  /// looping one is shown, or when part of the list cannot be loaded.
   Future<PhotoSequenceEntry?> neighbour(int from, int step, {bool Function(MediaItem item)? skip}) async {
+    if (loops) return _neighbourAround(from, step, skip: skip);
     for (var i = from + step; i >= 0 && i < _length(); i += step) {
       final item = _itemAt(i) ?? await _loadItemAt(i);
       if (item == null) {
@@ -76,24 +89,76 @@ class PhotoSequence {
     }
     return null;
   }
+
+  /// [neighbour] in a list that loops: one lap at most, so a list with
+  /// nothing else to show ends where it started.
+  Future<PhotoSequenceEntry?> _neighbourAround(int from, int step, {bool Function(MediaItem item)? skip}) async {
+    for (var taken = 1; taken < _length(); taken++) {
+      final i = (from + step * taken) % _length();
+      final item = _itemAt(i) ?? await _loadItemAt(i);
+      if (item == null) {
+        appLogger.d('Photo viewer: no item at $i of a looping sequence');
+        return null;
+      }
+      if (shows(item) && skip?.call(item) != true) return (index: i, photo: item);
+    }
+    return null;
+  }
 }
 
 /// Opens the viewer on the photo [sequence] stands on. [autoplayInitialClip]
 /// plays it at once when it is a clip and clips play automatically, as for a
-/// tap on its card. [slideshow] runs a slideshow through the sequence.
+/// tap on its card. [slideshow] runs a slideshow through the sequence, and
+/// [shuffle] tells it the sequence is a shuffle.
 Future<void> openPhotoSequence(
   BuildContext context,
   PhotoSequence sequence, {
   bool autoplayInitialClip = false,
   bool slideshow = false,
+  PhotoShuffleSession? shuffle,
 }) {
   return Navigator.push<void>(
     context,
     MaterialPageRoute(
-      builder: (_) =>
-          PhotoSequenceViewer(sequence: sequence, autoplayInitialClip: autoplayInitialClip, slideshow: slideshow),
+      builder: (_) => PhotoSequenceViewer(
+        sequence: sequence,
+        autoplayInitialClip: autoplayInitialClip,
+        slideshow: slideshow,
+        shuffle: shuffle,
+      ),
     ),
   );
+}
+
+/// The header a slideshow draws over its photos. It stays put while the
+/// photos change under it, so focus in it lasts from one photo to the next.
+class PhotoSequenceHeader {
+  PhotoSequenceHeader({required this.focus, required this.hasFocus});
+
+  /// Up from the photo: shows the header and focuses it.
+  final VoidCallback focus;
+
+  /// Whether focus is in the header, where a photo coming in leaves it.
+  final bool Function() hasFocus;
+
+  Object? _photoOwner;
+  VoidCallback? _focusPhoto;
+
+  /// The viewer of the photo coming in, [owner], is where Down from the
+  /// header goes.
+  void attachPhoto(Object owner, VoidCallback focusPhoto) {
+    _photoOwner = owner;
+    _focusPhoto = focusPhoto;
+  }
+
+  void detachPhoto(Object owner) {
+    if (!identical(owner, _photoOwner)) return;
+    _photoOwner = null;
+    _focusPhoto = null;
+  }
+
+  /// Down from the header.
+  void focusPhoto() => _focusPhoto?.call();
 }
 
 /// What the viewer of one photo needs from the sequence around it.
@@ -106,8 +171,13 @@ class PhotoNavigation extends InheritedWidget {
     this.onPlay,
     this.onSelect,
     this.onZoomIn,
+    this.header,
     required super.child,
   });
+
+  /// The header the sequence draws in place of the viewer's own, when it
+  /// draws one.
+  final PhotoSequenceHeader? header;
 
   /// Enter, Select or a tap on the photo, when the sequence does something
   /// with them: a slideshow pauses or resumes.
@@ -140,7 +210,8 @@ class PhotoNavigation extends InheritedWidget {
       keepsImage != oldWidget.keepsImage ||
       onPlay != oldWidget.onPlay ||
       onSelect != oldWidget.onSelect ||
-      onZoomIn != oldWidget.onZoomIn;
+      onZoomIn != oldWidget.onZoomIn ||
+      header != oldWidget.header;
 }
 
 /// Plays a clip of a sequence, and completes once the player closes. Next and
@@ -166,13 +237,24 @@ class PhotoSequenceViewer extends StatefulWidget {
   /// photo for the slideshow duration, each clip as it plays to its end.
   final bool slideshow;
 
+  /// Set when the slideshow is a shuffle: its header then names what it
+  /// shuffles and can switch to the album of the item shown and back.
+  final PhotoShuffleSession? shuffle;
+
   const PhotoSequenceViewer({
     super.key,
     required this.sequence,
     this.playClip,
     this.autoplayInitialClip = false,
     this.slideshow = false,
+    this.shuffle,
   });
+
+  /// A slideshow hides its header once it has gone on this long without any
+  /// input. A paused one always shows it.
+  static const headerHideDelay = Duration(seconds: 4);
+
+  static const headerFade = Duration(milliseconds: 200);
 
   /// The photos of a slideshow fade from one to the next for this long.
   static const slideshowCrossFade = Duration(milliseconds: 400);
@@ -203,7 +285,30 @@ class PhotoSequenceViewer extends StatefulWidget {
 }
 
 class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
-  PhotoSequence get _sequence => widget.sequence;
+  /// The sequence the viewer moves through: the one it opened on, or the
+  /// album a shuffle switched to.
+  late PhotoSequence _sequence = widget.sequence;
+
+  /// The album a shuffle switched to, while it shows one. The shuffle's own
+  /// sequence stays as it was, on the item it was left at.
+  PhotoAlbumSequence? _albumMode;
+
+  /// The album of the item a shuffle shows, once known.
+  PhotoAlbumRef? _album;
+
+  /// Albums that could not be opened, by id. They are not offered again.
+  final Set<String> _unopenedAlbums = {};
+
+  /// An album is being opened; the slideshow holds on the item shown.
+  bool _switching = false;
+
+  /// Whether the slideshow's header shows while the slideshow plays.
+  bool _headerShown = true;
+  Timer? _headerTimer;
+  late final PhotoSequenceHeader _header = PhotoSequenceHeader(focus: _focusHeader, hasFocus: () => _headerHasFocus);
+  final FocusNode _headerBackNode = FocusNode(debugLabel: 'photo_slideshow_back');
+  final FocusNode _albumNode = FocusNode(debugLabel: 'photo_slideshow_album');
+  final FocusNode _shuffleNode = FocusNode(debugLabel: 'photo_slideshow_shuffle');
 
   /// The photos on either side, kept as futures so that a move made while one
   /// is still loading waits for it.
@@ -269,6 +374,7 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
     if (widget.slideshow) {
       _showRunning = true;
       unawaited(WakelockController.shared.setEnabled(true, owner: this));
+      _armHeaderHide();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _arrive();
       });
@@ -297,6 +403,11 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
     _clipAutoplay?.cancel();
     _slideTimer?.cancel();
     _skipTimer?.cancel();
+    _headerTimer?.cancel();
+    _albumMode?.dispose();
+    _headerBackNode.dispose();
+    _albumNode.dispose();
+    _shuffleNode.dispose();
     if (widget.slideshow) unawaited(WakelockController.shared.setEnabled(false, owner: this));
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     for (final image in _window.values) {
@@ -383,6 +494,7 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
   /// up for the slideshow duration. Either way the next item starts loading.
   void _arrive() {
     _sequence.onShown?.call(_sequence.index);
+    _refreshAlbum();
     if (!_showRunning) return;
     _slideTimer?.cancel();
     _skipTimer?.cancel();
@@ -419,7 +531,7 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
   Future<void> _advance() async {
     final generation = _generation;
     final ready = _ready;
-    if (!_showRunning || _paused || ready == null) return;
+    if (!_showRunning || _paused || _switching || ready == null) return;
     final PhotoSequenceEntry? entry;
     try {
       entry = await ready;
@@ -427,11 +539,19 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
       if (mounted && generation == _generation) _pauseForFailures();
       return;
     }
-    if (!mounted || generation != _generation || !_showRunning || _paused) return;
+    if (!mounted || generation != _generation || !_showRunning || _paused || _switching) return;
     // A move by hand under way arrives on its own; should it go nowhere, the
     // slideshow tries again after another duration.
     if (_moving) return _startSlideTimer();
-    if (entry == null) return _endShow();
+    if (entry == null) {
+      // An album only ends when the user leaves it; with nothing else to
+      // show, or a page that would not load, it stays and tries again.
+      if (_sequence.loops) {
+        _lookAhead();
+        return _startSlideTimer();
+      }
+      return _endShow();
+    }
     _moveTo(entry, 1);
   }
 
@@ -528,6 +648,7 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
       } else {
         _startSlideTimer();
       }
+      _armHeaderHide();
     } else {
       _slideTimer?.cancel();
       _skipTimer?.cancel();
@@ -620,6 +741,7 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
   }
 
   bool _handleHardwareKey(KeyEvent event) {
+    if (event is KeyDownEvent && widget.slideshow && (ModalRoute.of(context)?.isCurrent ?? false)) _noteInput();
     if (event is KeyUpEvent &&
         _clipAutoplayAfterKeyUp == _sequence.photo.globalKey &&
         !HardwareKeyboard.instance.logicalKeysPressed.any((key) => key.isDpadDirection)) {
@@ -685,6 +807,281 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
     _startSlideTimer();
   }
 
+  /// Offers the album of the item a shuffle shows, as soon as it is known.
+  void _refreshAlbum() {
+    final albums = widget.shuffle?.albums;
+    if (albums == null || _albumMode != null) return;
+    final photo = _sequence.photo;
+    final known = albums.knownAlbumOf(photo);
+    _setAlbum(known);
+    if (known != null || photo.parentId == null) return;
+    unawaited(
+      albums.albumOf(photo).then((album) {
+        if (mounted && _albumMode == null && _sequence.photo.globalKey == photo.globalKey) _setAlbum(album);
+      }),
+    );
+  }
+
+  void _setAlbum(PhotoAlbumRef? album) {
+    final offered = album == null || _unopenedAlbums.contains(album.id) ? null : album;
+    if (offered == _album) return;
+    // The album button goes; focus on it moves along the header first.
+    if (offered == null && _albumNode.hasFocus) _shuffleNode.requestFocus();
+    setState(() => _album = offered);
+  }
+
+  void _toggleShuffle() => _albumMode == null ? unawaited(_openAlbum()) : _backToShuffle();
+
+  /// Switches the shuffle to the album of the item shown, at that item. The
+  /// slideshow holds on it until the album's page with it has loaded; a move
+  /// by hand meanwhile drops the switch.
+  Future<void> _openAlbum() async {
+    final album = _album;
+    final albums = widget.shuffle?.albums;
+    if (album == null || albums == null || _albumMode != null || _switching) return;
+    final photo = _sequence.photo;
+    _slideTimer?.cancel();
+    _skipTimer?.cancel();
+    setState(() => _switching = true);
+    final opened = await albums.open(album, photo);
+    if (!mounted) return opened?.dispose();
+    setState(() => _switching = false);
+    if (opened != null && _albumMode == null && _sequence.photo.globalKey == photo.globalKey) {
+      // The album button gives way to the album; focus on it moves to the
+      // way back.
+      if (_albumNode.hasFocus) _shuffleNode.requestFocus();
+      _albumMode = opened;
+      return _enter(opened.sequence);
+    }
+    if (opened == null) {
+      _unopenedAlbums.add(album.id);
+      _setAlbum(null);
+    }
+    opened?.dispose();
+    _restartShown();
+  }
+
+  /// Back to the shuffle, at the item it was left at.
+  void _backToShuffle() {
+    final album = _albumMode;
+    if (album == null || _switching) return;
+    _albumMode = null;
+    album.dispose();
+    _enter(widget.sequence);
+  }
+
+  /// Makes [sequence] the one the slideshow goes through, on the item it
+  /// stands on, which stays on screen as it is. A slideshow paused or ended
+  /// before the switch goes on.
+  void _enter(PhotoSequence sequence) {
+    _slideTimer?.cancel();
+    _skipTimer?.cancel();
+    if (!_showRunning) unawaited(WakelockController.shared.setEnabled(true, owner: this));
+    setState(() {
+      _sequence = sequence;
+      _paused = false;
+      _showRunning = true;
+      _direction = 1;
+    });
+    _failureRun = 0;
+    _resolveNeighbours();
+    _sequence.onShown?.call(_sequence.index);
+    _refreshAlbum();
+    _restartShown();
+    _armHeaderHide();
+  }
+
+  /// Gives the item shown a full duration, or moves past it when it failed.
+  /// A clip is not played again.
+  void _restartShown() {
+    if (!_showRunning || _paused) return;
+    _lookAhead();
+    if (_isFailed(_sequence.photo)) return _scheduleSkip();
+    _startSlideTimer();
+  }
+
+  bool get _headerHasFocus => _headerBackNode.hasFocus || _albumNode.hasFocus || _shuffleNode.hasFocus;
+
+  bool get _headerVisible => !_showRunning || _paused || _switching || _headerShown || _headerHasFocus;
+
+  /// Input of any kind shows the header, which hides again once the
+  /// slideshow has gone on without any for a while.
+  void _noteInput() {
+    if (!widget.slideshow || !mounted) return;
+    if (!_headerShown) setState(() => _headerShown = true);
+    _armHeaderHide();
+  }
+
+  void _armHeaderHide() {
+    _headerTimer?.cancel();
+    _headerTimer = Timer(PhotoSequenceViewer.headerHideDelay, () {
+      if (mounted && _headerShown) setState(() => _headerShown = false);
+    });
+  }
+
+  /// The controls of the header, from left to right.
+  List<FocusNode> get _headerNodes => [
+    _headerBackNode,
+    if (_albumMode == null && _album != null) _albumNode,
+    if (widget.shuffle != null) _shuffleNode,
+  ];
+
+  /// Up from the photo lands on the album, or on the way back to the shuffle,
+  /// where the header has them.
+  void _focusHeader() {
+    _noteInput();
+    final nodes = _headerNodes;
+    (nodes.length > 1 ? nodes[1] : nodes.first).requestFocus();
+  }
+
+  KeyEventResult _handleHeaderKey(FocusNode _, KeyEvent event) {
+    final key = event.logicalKey;
+    if (!key.isDpadDirection) return handleBackKeyNavigation(context, event);
+    if (event.isActionable) {
+      if (key == LogicalKeyboardKey.arrowDown) _header.focusPhoto();
+      if (key == LogicalKeyboardKey.arrowLeft || key == LogicalKeyboardKey.arrowRight) {
+        final nodes = _headerNodes;
+        final at = nodes.indexWhere((node) => node.hasFocus);
+        final to = at + (key == LogicalKeyboardKey.arrowLeft ? -1 : 1);
+        if (at >= 0 && to >= 0 && to < nodes.length) nodes[to].requestFocus();
+      }
+    }
+    return KeyEventResult.handled;
+  }
+
+  String? get _modeLabel {
+    final shuffle = widget.shuffle;
+    if (shuffle == null) return null;
+    final album = _albumMode;
+    if (album == null) return t.libraries.slideshowShuffleMode(scope: shuffle.scope);
+    return t.libraries.slideshowAlbumMode(name: album.album.title, index: _sequence.index + 1, total: album.total);
+  }
+
+  /// Back, the title and date of the item shown, what the slideshow goes
+  /// through, and for a shuffle the switch to the album and back.
+  Widget _buildHeader(BuildContext context) {
+    final visible = _headerVisible;
+    final photo = _sequence.photo;
+    final textTheme = Theme.of(context).textTheme;
+    final date = PhotoViewerScreen.dateLabelOf(photo);
+    final mode = _modeLabel;
+    final album = _album;
+    return IgnorePointer(
+      ignoring: !visible,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: PhotoSequenceViewer.headerFade,
+        // Over the photos' own scaffolds, so it brings its own material.
+        child: Material(
+          type: MaterialType.transparency,
+          child: Focus(
+            canRequestFocus: false,
+            skipTraversal: true,
+            onKeyEvent: _handleHeaderKey,
+            onFocusChange: (_) => _noteInput(),
+            child: DecoratedBox(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.black54, Colors.transparent],
+                ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8, bottom: 24),
+                  child: Row(
+                    children: [
+                      AppBarBackButton(focusNode: _headerBackNode),
+                      Expanded(
+                        // Pinches that start on the title still reach the photo.
+                        child: IgnorePointer(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                PhotoViewerScreen.titleOf(photo),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: textTheme.titleMedium?.copyWith(color: Colors.white),
+                              ),
+                              for (final line in [?date, ?mode])
+                                Text(
+                                  line,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: textTheme.bodySmall?.copyWith(color: Colors.white70),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_albumMode == null && album != null) ...[const SizedBox(width: 8), _buildAlbumButton(album)],
+                      if (widget.shuffle != null) ...[const SizedBox(width: 8), _buildShuffleToggle()],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAlbumButton(PhotoAlbumRef album) {
+    void open() => unawaited(_openAlbum());
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 240),
+      child: FocusableButton(
+        focusNode: _albumNode,
+        onPressed: open,
+        autoScroll: false,
+        child: Tooltip(
+          message: t.tooltips.playPhotoAlbum,
+          child: TextButton.icon(
+            onPressed: open,
+            style: TextButton.styleFrom(backgroundColor: Colors.black38, foregroundColor: Colors.white),
+            icon: _switching
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const AppIcon(Symbols.photo_album_rounded),
+            label: Text(album.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// On while the shuffle plays; off plays the album of the item shown, in
+  /// order, and on again goes back to the shuffle.
+  Widget _buildShuffleToggle() {
+    final shuffling = _albumMode == null;
+    return FocusableButton(
+      focusNode: _shuffleNode,
+      // Stays focusable when there is no album to switch to, so focus does
+      // not drop out of the header as the items change.
+      onPressed: _toggleShuffle,
+      autoScroll: false,
+      child: IconButton(
+        onPressed: shuffling && _album == null ? null : _toggleShuffle,
+        isSelected: shuffling,
+        tooltip: shuffling ? t.tooltips.playPhotoAlbum : t.tooltips.backToShuffle,
+        style: IconButton.styleFrom(
+          backgroundColor: Colors.black38,
+          foregroundColor: Colors.white,
+          disabledForegroundColor: Colors.white54,
+        ),
+        icon: const AppIcon(Symbols.shuffle_rounded),
+        selectedIcon: const AppIcon(Symbols.shuffle_on_rounded),
+      ),
+    );
+  }
+
   void _goPrevious() => unawaited(_go(-1));
   void _goNext() => unawaited(_go(1));
 
@@ -722,13 +1119,20 @@ class _PhotoSequenceViewerState extends State<PhotoSequenceViewer> {
       onPlay: _play,
       onSelect: widget.slideshow ? _togglePause : null,
       onZoomIn: widget.slideshow ? _pauseForZoom : null,
-      child: Stack(
-        children: [
-          Positioned.fill(child: widget.slideshow ? _crossFade(viewer) : viewer),
-          if (showButtons && hasPrevious) Positioned.fill(right: null, child: _buildButton(previous: true)),
-          if (showButtons && hasNext) Positioned.fill(left: null, child: _buildButton(previous: false)),
-          if (_paused) _buildPausedBadge(context),
-        ],
+      header: widget.slideshow ? _header : null,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => _noteInput(),
+        onPointerHover: (_) => _noteInput(),
+        child: Stack(
+          children: [
+            Positioned.fill(child: widget.slideshow ? _crossFade(viewer) : viewer),
+            if (showButtons && hasPrevious) Positioned.fill(right: null, child: _buildButton(previous: true)),
+            if (showButtons && hasNext) Positioned.fill(left: null, child: _buildButton(previous: false)),
+            if (_paused) _buildPausedBadge(context),
+            if (widget.slideshow) Positioned(top: 0, left: 0, right: 0, child: _buildHeader(context)),
+          ],
+        ),
       ),
     );
   }

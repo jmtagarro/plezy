@@ -15,6 +15,7 @@ import '../../utils/snackbar_helper.dart';
 import '../jellyfin_client.dart';
 import '../plex_client.dart';
 import 'media_browser_photo_shuffle_source.dart';
+import 'photo_shuffle_album.dart';
 import 'photo_shuffle_source.dart';
 import 'photo_walk_source.dart';
 import 'plex_photo_queue_source.dart';
@@ -35,7 +36,8 @@ abstract final class PhotoShuffleLauncher {
       collection.kind == MediaKind.collection && collection is PlexMediaItem && collection.subtype == 'photo';
 
   /// Loads the first items of [target] in a random order behind a spinner,
-  /// then runs the slideshow. Says so when there is nothing to show.
+  /// then runs the slideshow, which can switch to the album of the item it
+  /// shows. Says so when there is nothing to show.
   static Future<void> start(BuildContext context, PhotoShuffleTarget target) async {
     final override = debugStartOverride;
     if (override != null) return override(context, target);
@@ -57,7 +59,9 @@ abstract final class PhotoShuffleLauncher {
       return;
     }
     try {
-      if (context.mounted) await openPhotoSequence(context, opened.sequence, slideshow: true);
+      if (context.mounted) {
+        await openPhotoSequence(context, opened.sequence, slideshow: true, shuffle: session(client, target));
+      }
     } finally {
       opened.source.dispose();
     }
@@ -99,6 +103,13 @@ abstract final class PhotoShuffleLauncher {
     walk.dispose();
     return null;
   }
+
+  /// What the slideshow of [target] knows about it: its name, and the albums
+  /// of the items it shows.
+  static PhotoShuffleSession session(MediaServerClient client, PhotoShuffleTarget target) => PhotoShuffleSession(
+    scope: target.title,
+    albums: PhotoShuffleAlbums(client: client, libraryId: target.libraryId),
+  );
 
   static Future<PhotoSequence?> _sequenceOf(PhotoShuffleSource source) async =>
       await source.start() ? await source.sequence() : null;

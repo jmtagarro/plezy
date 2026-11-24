@@ -811,7 +811,9 @@
     "markAsUnwatched": "未視聴にする",
     "previousPhoto": "",
     "nextPhoto": "",
-    "slideshowPaused": ""
+    "slideshowPaused": "",
+    "playPhotoAlbum": "",
+    "backToShuffle": ""
   },
   "audioTracks": {
     "track": "音声トラック${n}"
@@ -1247,6 +1249,8 @@
     "reasonUnexpected": "予期しないエラーが発生しました"
   },
   "libraries": {
+    "slideshowShuffleMode": "",
+    "slideshowAlbumMode": "",
     "title": "ライブラリ",
     "fallbackTitle": "ライブラリ",
     "scanLibraryFiles": "ライブラリファイルをスキャン",

@@ -2269,6 +2269,12 @@ class Translations$tooltips$en {
 
 	/// en: 'Slideshow paused'
 	String get slideshowPaused => 'Slideshow paused';
+
+	/// en: 'Play this album in order'
+	String get playPhotoAlbum => 'Play this album in order';
+
+	/// en: 'Back to shuffle'
+	String get backToShuffle => 'Back to shuffle';
 }
 
 // Path: audioTracks
@@ -3443,6 +3449,12 @@ class Translations$libraries$en {
 	final Translations _root; // ignore: unused_field
 
 	// Translations
+
+	/// en: 'Shuffle · ${scope}'
+	String slideshowShuffleMode({required Object scope}) => 'Shuffle · ${scope}';
+
+	/// en: 'Album · ${name} · ${index} / ${total}'
+	String slideshowAlbumMode({required Object name, required Object index, required Object total}) => 'Album · ${name} · ${index} / ${total}';
 
 	/// en: 'Libraries'
 	String get title => 'Libraries';
@@ -8907,6 +8919,8 @@ extension on Translations {
 			'tooltips.previousPhoto' => 'Previous photo',
 			'tooltips.nextPhoto' => 'Next photo',
 			'tooltips.slideshowPaused' => 'Slideshow paused',
+			'tooltips.playPhotoAlbum' => 'Play this album in order',
+			'tooltips.backToShuffle' => 'Back to shuffle',
 			'audioTracks.track' => ({required Object n}) => 'Audio Track ${n}',
 			'videoControls.audioLabel' => 'Audio',
 			'videoControls.subtitlesLabel' => 'Subtitles',
@@ -9167,10 +9181,10 @@ extension on Translations {
 			'profiles.borrowFromProfile' => ({required Object displayName}) => 'From ${displayName}',
 			'profiles.borrowConnectionBorrowed' => 'Connection borrowed.',
 			'profiles.borrowFailed' => 'Failed to borrow connection.',
-			'profiles.incorrectPin' => 'Incorrect PIN.',
-			'profiles.incorrectPinTryAgain' => 'Incorrect PIN. Please try again.',
 			_ => null,
 		} ?? switch (path) {
+			'profiles.incorrectPin' => 'Incorrect PIN.',
+			'profiles.incorrectPinTryAgain' => 'Incorrect PIN. Please try again.',
 			'profiles.sourceProfileMissingParentAccount' => 'Source profile is missing its parent account.',
 			'profiles.failedToLoadHomeUsers' => 'Could not load your Plex Home users. Check your connection and try again.',
 			'profiles.failedToVerifyPin' => 'Failed to verify PIN.',
@@ -9299,6 +9313,8 @@ extension on Translations {
 			'errors.reasonServerError' => 'the server reported an error',
 			'errors.reasonCancelled' => 'the request was cancelled',
 			'errors.reasonUnexpected' => 'an unexpected error occurred',
+			'libraries.slideshowShuffleMode' => ({required Object scope}) => 'Shuffle · ${scope}',
+			'libraries.slideshowAlbumMode' => ({required Object name, required Object index, required Object total}) => 'Album · ${name} · ${index} / ${total}',
 			'libraries.title' => 'Libraries',
 			'libraries.fallbackTitle' => 'Library',
 			'libraries.scanLibraryFiles' => 'Scan Library Files',
@@ -9679,12 +9695,12 @@ extension on Translations {
 			'liveTv.recordingFailed' => 'Couldn\'t schedule recording',
 			'liveTv.recordingTargetMissing' => 'Couldn\'t determine recording library',
 			'liveTv.recordNotAvailable' => 'Recording not available for this program',
+			_ => null,
+		} ?? switch (path) {
 			'liveTv.recordingCancelled' => 'Recording canceled',
 			'liveTv.recordingRuleDeleted' => 'Recording rule deleted',
 			'liveTv.processRecordingRules' => 'Re-evaluate rules',
 			'liveTv.recordingInProgress' => 'Recording now',
-			_ => null,
-		} ?? switch (path) {
 			'liveTv.recordingsCount' => ({required Object count}) => '${count} scheduled',
 			'liveTv.editRule' => 'Edit rule',
 			'liveTv.editRuleAction' => 'Edit',
@@ -10193,12 +10209,12 @@ extension on Translations {
 			'performanceOverlay.displayFps' => 'Display FPS',
 			'performanceOverlay.avSync' => 'A/V Sync',
 			'performanceOverlay.dropped' => 'Dropped',
+			_ => null,
+		} ?? switch (path) {
 			'performanceOverlay.dvRpus' => 'DV RPUs',
 			'performanceOverlay.dvRpuAverage' => 'DV RPU Avg',
 			'performanceOverlay.dvSampleAverage' => 'DV Sample Avg',
 			'performanceOverlay.maxLuma' => 'Max Luma',
-			_ => null,
-		} ?? switch (path) {
 			'performanceOverlay.minLuma' => 'Min Luma',
 			'performanceOverlay.maxCll' => 'MaxCLL',
 			'performanceOverlay.maxFall' => 'MaxFALL',

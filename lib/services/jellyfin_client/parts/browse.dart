@@ -1291,7 +1291,9 @@ mixin _JellyfinBrowseMethods on _JellyfinClientInternals {
   /// A page of the photos and videos anywhere under [parentId] (an album,
   /// folder, collection or library), in an order the server randomizes. The
   /// order is drawn again for every page, so pages can repeat items and miss
-  /// others; callers drop the repeats.
+  /// others; callers drop the repeats. Each item names the folder it is
+  /// directly in (`ParentId`, sent only when asked for), so a slideshow can
+  /// open it.
   Future<LibraryPage<MediaItem>> fetchRandomPhotoDescendantsPage(
     String parentId, {
     required int start,
@@ -1305,6 +1307,7 @@ mixin _JellyfinBrowseMethods on _JellyfinClientInternals {
       abort: abort,
       includeItemTypes: 'Photo,Video',
       randomOrder: true,
+      fields: '$_episodeRowFields,ParentId',
     );
   }
 
@@ -1352,6 +1355,7 @@ mixin _JellyfinBrowseMethods on _JellyfinClientInternals {
     required String includeItemTypes,
     bool byAlbumArtist = false,
     bool randomOrder = false,
+    String? fields,
   }) async {
     final offset = start ?? 0;
     final pageSize = size ?? _pagedListPageSize;
@@ -1367,7 +1371,7 @@ mixin _JellyfinBrowseMethods on _JellyfinClientInternals {
         if (randomOrder) 'SortBy': 'Random',
         'StartIndex': offset.toString(),
         'Limit': pageSize.toString(),
-        'Fields': _episodeRowFields,
+        'Fields': fields ?? _episodeRowFields,
         ..._excludeVirtualItemsQuery,
         ...jellyfinImageQueryParameters,
       },

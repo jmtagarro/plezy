@@ -16,6 +16,12 @@ sealed class PhotoShuffleTarget {
   /// The id the server knows the container by.
   String get id;
 
+  /// Names the container to the user.
+  String get title;
+
+  /// The library the container is in, when known.
+  String? get libraryId;
+
   /// Names the container in logs.
   String get logLabel => '${runtimeType.toString().replaceFirst('PhotoShuffle', '').toLowerCase()} $id';
 }
@@ -31,6 +37,10 @@ final class PhotoShuffleAlbum extends PhotoShuffleTarget {
   MediaBackend get backend => album.backend;
   @override
   String get id => album.id;
+  @override
+  String get title => album.displayTitle;
+  @override
+  String? get libraryId => album.libraryId;
 }
 
 /// A folder of a library's folder view.
@@ -38,6 +48,7 @@ final class PhotoShuffleFolder extends PhotoShuffleTarget {
   const PhotoShuffleFolder(this.folder, {this.libraryId, this.libraryTitle});
 
   final MediaItem folder;
+  @override
   final String? libraryId;
   final String? libraryTitle;
 
@@ -47,6 +58,8 @@ final class PhotoShuffleFolder extends PhotoShuffleTarget {
   MediaBackend get backend => folder.backend;
   @override
   String get id => folder.id;
+  @override
+  String get title => folder.displayTitle;
 }
 
 final class PhotoShuffleCollection extends PhotoShuffleTarget {
@@ -60,6 +73,10 @@ final class PhotoShuffleCollection extends PhotoShuffleTarget {
   MediaBackend get backend => collection.backend;
   @override
   String get id => collection.id;
+  @override
+  String get title => collection.displayTitle;
+  @override
+  String? get libraryId => collection.libraryId;
 }
 
 final class PhotoShuffleLibrary extends PhotoShuffleTarget {
@@ -73,6 +90,10 @@ final class PhotoShuffleLibrary extends PhotoShuffleTarget {
   MediaBackend get backend => library.backend;
   @override
   String get id => library.id;
+  @override
+  String get title => library.title;
+  @override
+  String? get libraryId => library.id;
 }
 
 /// The photos and clips of a [PhotoShuffleTarget] in a random order, loaded as
